@@ -14,24 +14,29 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
 import {
+  ARABIC_FONT_FAMILIES,
+  FONT_TYPE_LABELS,
   TAFSEER_OPTIONS,
   TRANSLATION_OPTIONS,
   useQuranSettings,
+  type QuranSettings,
 } from "@/context/QuranContext";
 
 function SettingRow({
   label,
   children,
+  last,
 }: {
   label: string;
   children: React.ReactNode;
+  last?: boolean;
 }) {
   const colors = useColors();
   return (
     <View
       style={[
         styles.settingRow,
-        { borderBottomColor: colors.border },
+        { borderBottomColor: last ? "transparent" : colors.border },
       ]}
     >
       <Text style={[styles.settingLabel, { color: colors.foreground }]}>
@@ -61,9 +66,7 @@ function SizeControl({
       <TouchableOpacity
         style={[
           styles.sizeBtn,
-          {
-            backgroundColor: value <= min ? colors.muted : colors.secondary,
-          },
+          { backgroundColor: value <= min ? colors.muted : colors.secondary },
         ]}
         onPress={onDecrease}
         disabled={value <= min}
@@ -80,9 +83,7 @@ function SizeControl({
       <TouchableOpacity
         style={[
           styles.sizeBtn,
-          {
-            backgroundColor: value >= max ? colors.muted : colors.secondary,
-          },
+          { backgroundColor: value >= max ? colors.muted : colors.secondary },
         ]}
         onPress={onIncrease}
         disabled={value >= max}
@@ -114,8 +115,10 @@ export default function SettingsScreen() {
     pickerMode === "translation"
       ? settings.translationEdition
       : settings.tafseerEdition;
-  const pickerKey =
+  const pickerKey: keyof QuranSettings =
     pickerMode === "translation" ? "translationEdition" : "tafseerEdition";
+
+  const fontTypes: QuranSettings["fontType"][] = ["uthmani", "indopak"];
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -130,7 +133,12 @@ export default function SettingsScreen() {
           Settings
         </Text>
 
-        <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <View
+          style={[
+            styles.section,
+            { backgroundColor: colors.card, borderColor: colors.border },
+          ]}
+        >
           <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>
             DISPLAY
           </Text>
@@ -153,7 +161,7 @@ export default function SettingsScreen() {
             />
           </SettingRow>
 
-          <SettingRow label="Tajweed Colors">
+          <SettingRow label="Tajweed Colors" last>
             <Switch
               value={settings.showTajweed}
               onValueChange={(v) => updateSetting("showTajweed", v)}
@@ -163,14 +171,19 @@ export default function SettingsScreen() {
           </SettingRow>
         </View>
 
-        <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <View
+          style={[
+            styles.section,
+            { backgroundColor: colors.card, borderColor: colors.border },
+          ]}
+        >
           <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>
             ARABIC FONT
           </Text>
 
           <SettingRow label="Font Style">
             <View style={styles.fontToggle}>
-              {(["uthmani", "simple"] as const).map((type) => (
+              {fontTypes.map((type) => (
                 <TouchableOpacity
                   key={type}
                   style={[
@@ -195,7 +208,7 @@ export default function SettingsScreen() {
                       },
                     ]}
                   >
-                    {type === "uthmani" ? "Uthmani" : "Indo-Pak"}
+                    {FONT_TYPE_LABELS[type]}
                   </Text>
                 </TouchableOpacity>
               ))}
@@ -224,26 +237,27 @@ export default function SettingsScreen() {
           >
             <Text
               style={[
-                styles.arabicPreviewText,
                 {
                   color: colors.foreground,
                   fontSize: settings.arabicFontSize,
-                  fontFamily:
-                    settings.fontType === "uthmani"
-                      ? "Amiri_400Regular"
-                      : undefined,
+                  fontFamily: ARABIC_FONT_FAMILIES[settings.fontType],
+                  textAlign: "right",
+                  writingDirection: "rtl",
+                  lineHeight: settings.arabicFontSize * 1.9,
                 },
               ]}
             >
               بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ
             </Text>
+            <Text
+              style={[
+                styles.fontLabel,
+                { color: colors.mutedForeground },
+              ]}
+            >
+              {FONT_TYPE_LABELS[settings.fontType]}
+            </Text>
           </View>
-        </View>
-
-        <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>
-            TEXT SIZES
-          </Text>
 
           <SettingRow label="Translation Size">
             <SizeControl
@@ -265,7 +279,7 @@ export default function SettingsScreen() {
             />
           </SettingRow>
 
-          <SettingRow label="Tafseer Size">
+          <SettingRow label="Tafseer Size" last>
             <SizeControl
               value={settings.tafseerFontSize}
               min={11}
@@ -280,7 +294,12 @@ export default function SettingsScreen() {
           </SettingRow>
         </View>
 
-        <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <View
+          style={[
+            styles.section,
+            { backgroundColor: colors.card, borderColor: colors.border },
+          ]}
+        >
           <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>
             CONTENT
           </Text>
@@ -293,12 +312,21 @@ export default function SettingsScreen() {
               Translation
             </Text>
             <View style={styles.pickerValue}>
-              <Text style={[styles.pickerValueText, { color: colors.mutedForeground }]}>
+              <Text
+                style={[
+                  styles.pickerValueText,
+                  { color: colors.mutedForeground },
+                ]}
+              >
                 {TRANSLATION_OPTIONS.find(
                   (t) => t.id === settings.translationEdition
                 )?.label ?? settings.translationEdition}
               </Text>
-              <Ionicons name="chevron-forward" size={16} color={colors.mutedForeground} />
+              <Ionicons
+                name="chevron-forward"
+                size={16}
+                color={colors.mutedForeground}
+              />
             </View>
           </TouchableOpacity>
 
@@ -310,11 +338,20 @@ export default function SettingsScreen() {
               Tafseer
             </Text>
             <View style={styles.pickerValue}>
-              <Text style={[styles.pickerValueText, { color: colors.mutedForeground }]}>
+              <Text
+                style={[
+                  styles.pickerValueText,
+                  { color: colors.mutedForeground },
+                ]}
+              >
                 {TAFSEER_OPTIONS.find((t) => t.id === settings.tafseerEdition)
                   ?.label ?? settings.tafseerEdition}
               </Text>
-              <Ionicons name="chevron-forward" size={16} color={colors.mutedForeground} />
+              <Ionicons
+                name="chevron-forward"
+                size={16}
+                color={colors.mutedForeground}
+              />
             </View>
           </TouchableOpacity>
         </View>
@@ -336,9 +373,15 @@ export default function SettingsScreen() {
               { backgroundColor: colors.card, borderColor: colors.border },
             ]}
           >
-            <View style={[styles.pickerHandle, { backgroundColor: colors.border }]} />
+            <View
+              style={[
+                styles.pickerHandle,
+                { backgroundColor: colors.border },
+              ]}
+            />
             <Text style={[styles.pickerTitle, { color: colors.foreground }]}>
-              Select {pickerMode === "translation" ? "Translation" : "Tafseer"}
+              Select{" "}
+              {pickerMode === "translation" ? "Translation" : "Tafseer"}
             </Text>
             {pickerOptions.map((opt) => (
               <TouchableOpacity
@@ -348,20 +391,34 @@ export default function SettingsScreen() {
                   { borderBottomColor: colors.border },
                 ]}
                 onPress={() => {
-                  updateSetting(pickerKey as any, opt.id);
+                  updateSetting(pickerKey, opt.id);
                   setPickerMode(null);
                 }}
               >
                 <View>
-                  <Text style={[styles.pickerOptLabel, { color: colors.foreground }]}>
+                  <Text
+                    style={[
+                      styles.pickerOptLabel,
+                      { color: colors.foreground },
+                    ]}
+                  >
                     {opt.label}
                   </Text>
-                  <Text style={[styles.pickerOptLang, { color: colors.mutedForeground }]}>
+                  <Text
+                    style={[
+                      styles.pickerOptLang,
+                      { color: colors.mutedForeground },
+                    ]}
+                  >
                     {opt.language}
                   </Text>
                 </View>
                 {pickerValue === opt.id && (
-                  <Ionicons name="checkmark" size={20} color={colors.primary} />
+                  <Ionicons
+                    name="checkmark"
+                    size={20}
+                    color={colors.primary}
+                  />
                 )}
               </TouchableOpacity>
             ))}
@@ -373,17 +430,9 @@ export default function SettingsScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  scroll: {
-    paddingHorizontal: 20,
-    gap: 16,
-  },
-  title: {
-    fontSize: 28,
-    fontFamily: "Inter_700Bold",
-  },
+  container: { flex: 1 },
+  scroll: { paddingHorizontal: 20, gap: 16 },
+  title: { fontSize: 28, fontFamily: "Inter_700Bold" },
   section: {
     borderRadius: 16,
     borderWidth: 1,
@@ -410,24 +459,14 @@ const styles = StyleSheet.create({
     fontFamily: "Inter_400Regular",
     flex: 1,
   },
-  fontToggle: {
-    flexDirection: "row",
-    gap: 6,
-  },
+  fontToggle: { flexDirection: "row", gap: 6, flexWrap: "wrap" },
   fontOption: {
     borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 6,
   },
-  fontOptionText: {
-    fontSize: 13,
-    fontFamily: "Inter_500Medium",
-  },
-  sizeControl: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-  },
+  fontOptionText: { fontSize: 12, fontFamily: "Inter_500Medium" },
+  sizeControl: { flexDirection: "row", alignItems: "center", gap: 12 },
   sizeBtn: {
     width: 32,
     height: 32,
@@ -446,21 +485,16 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     padding: 16,
     marginVertical: 10,
-    alignItems: "center",
-  },
-  arabicPreviewText: {
-    textAlign: "right",
-    writingDirection: "rtl",
-  },
-  pickerValue: {
-    flexDirection: "row",
-    alignItems: "center",
+    alignItems: "flex-end",
     gap: 6,
   },
-  pickerValueText: {
-    fontSize: 14,
+  fontLabel: {
+    fontSize: 11,
     fontFamily: "Inter_400Regular",
+    alignSelf: "flex-start",
   },
+  pickerValue: { flexDirection: "row", alignItems: "center", gap: 6 },
+  pickerValueText: { fontSize: 14, fontFamily: "Inter_400Regular" },
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.5)",
@@ -480,11 +514,7 @@ const styles = StyleSheet.create({
     alignSelf: "center",
     marginBottom: 16,
   },
-  pickerTitle: {
-    fontSize: 18,
-    fontFamily: "Inter_600SemiBold",
-    marginBottom: 12,
-  },
+  pickerTitle: { fontSize: 18, fontFamily: "Inter_600SemiBold", marginBottom: 12 },
   pickerOption: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -492,13 +522,6 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     borderBottomWidth: 1,
   },
-  pickerOptLabel: {
-    fontSize: 15,
-    fontFamily: "Inter_500Medium",
-  },
-  pickerOptLang: {
-    fontSize: 12,
-    fontFamily: "Inter_400Regular",
-    marginTop: 2,
-  },
+  pickerOptLabel: { fontSize: 15, fontFamily: "Inter_500Medium" },
+  pickerOptLang: { fontSize: 12, fontFamily: "Inter_400Regular", marginTop: 2 },
 });

@@ -13,7 +13,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
-import { useQuranSettings } from "@/context/QuranContext";
+import { getArabicFontFamily, useQuranSettings } from "@/context/QuranContext";
 import { useBookmarks } from "@/context/BookmarkContext";
 import { AyahData } from "@/components/AyahItem";
 import TajweedText, { stripTajweedTags } from "@/components/TajweedText";
@@ -70,9 +70,7 @@ export default function SurahScreen() {
   const surahId = Number(id);
   const arabicEdition = settings.showTajweed
     ? "quran-tajweed"
-    : settings.fontType === "uthmani"
-    ? "quran-uthmani"
-    : "quran-simple";
+    : "quran-uthmani";
 
   const { data: arabicData, isLoading: arabicLoading } = useQuery({
     queryKey: ["surah-arabic", surahId, arabicEdition],
@@ -100,7 +98,7 @@ export default function SurahScreen() {
       navigation.setOptions({
         title: `${arabicData.englishName}`,
         headerRight: () => (
-          <Text style={{ fontFamily: "Amiri_400Regular", fontSize: 18, color: colors.accent, marginRight: 8 }}>
+          <Text style={{ fontFamily: fontFamily, fontSize: 18, color: colors.accent, marginRight: 8 }}>
             {arabicData.name}
           </Text>
         ),
@@ -134,8 +132,7 @@ export default function SurahScreen() {
   }));
 
   const showBismillah = surahId !== 1 && surahId !== 9;
-  const fontFamily =
-    settings.fontType === "uthmani" ? "Amiri_400Regular" : undefined;
+  const fontFamily = getArabicFontFamily(settings.fontType);
 
   const handleLongPress = (ayah: AyahData) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);

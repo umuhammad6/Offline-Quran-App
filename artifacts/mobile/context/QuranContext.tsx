@@ -2,7 +2,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, { createContext, useContext, useEffect, useState } from "react";
 
 export interface QuranSettings {
-  fontType: "uthmani" | "simple";
+  fontType: "uthmani" | "indopak";
   arabicFontSize: number;
   translationFontSize: number;
   tafseerFontSize: number;
@@ -24,6 +24,20 @@ const DEFAULT_SETTINGS: QuranSettings = {
   translationEdition: "en.sahih",
   tafseerEdition: "en.muyassar",
 };
+
+export const ARABIC_FONT_FAMILIES: Record<QuranSettings["fontType"], string> = {
+  uthmani: "KFGQPCHafsUthmanic",
+  indopak: "NotoNaskhArabic_400Regular",
+};
+
+export const FONT_TYPE_LABELS: Record<QuranSettings["fontType"], string> = {
+  uthmani: "KFGQPC Uthmani",
+  indopak: "Indo-Pak Naskh",
+};
+
+export function getArabicFontFamily(fontType: QuranSettings["fontType"]): string {
+  return ARABIC_FONT_FAMILIES[fontType];
+}
 
 export const TRANSLATION_OPTIONS = [
   { id: "en.sahih", label: "Saheeh International", language: "English" },

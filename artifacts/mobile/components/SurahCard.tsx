@@ -6,6 +6,7 @@ import {
   View,
 } from "react-native";
 import { useColors } from "@/hooks/useColors";
+import { getArabicFontFamily, useQuranSettings } from "@/context/QuranContext";
 
 export interface SurahMeta {
   number: number;
@@ -23,6 +24,8 @@ interface SurahCardProps {
 
 export default function SurahCard({ surah, onPress }: SurahCardProps) {
   const colors = useColors();
+  const { settings } = useQuranSettings();
+  const arabicFont = getArabicFontFamily(settings.fontType);
 
   return (
     <TouchableOpacity
@@ -54,7 +57,7 @@ export default function SurahCard({ surah, onPress }: SurahCardProps) {
         </View>
       </View>
 
-      <Text style={[styles.arabicName, { color: colors.accent }]}>
+      <Text style={[styles.arabicName, { color: colors.accent, fontFamily: arabicFont }]}>
         {surah.name}
       </Text>
     </TouchableOpacity>
@@ -113,7 +116,6 @@ const styles = StyleSheet.create({
   },
   arabicName: {
     fontSize: 20,
-    fontFamily: "Amiri_400Regular",
     textAlign: "right",
   },
 });

@@ -56,6 +56,7 @@
     "zod-validation-error": "^3.4.0"
   },
   "dependencies": {
-    "@expo-google-fonts/amiri": "^0.4.1"
+    "@expo-google-fonts/amiri": "^0.4.1",
+    "@expo-google-fonts/noto-naskh-arabic": "^0.4.5"
   }
 }

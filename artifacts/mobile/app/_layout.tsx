@@ -1,8 +1,8 @@
 import {
-  Amiri_400Regular,
-  Amiri_700Bold,
-  useFonts as useAmiriFonts,
-} from "@expo-google-fonts/amiri";
+  NotoNaskhArabic_400Regular,
+  NotoNaskhArabic_700Bold,
+  useFonts as useNotoFonts,
+} from "@expo-google-fonts/noto-naskh-arabic";
 import {
   Inter_400Regular,
   Inter_500Medium,
@@ -13,6 +13,7 @@ import {
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
+import { useFonts as useLocalFonts } from "expo-font";
 import React, { useEffect } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
@@ -50,13 +51,17 @@ export default function RootLayout() {
     Inter_700Bold,
   });
 
-  const [amiriLoaded, amiriError] = useAmiriFonts({
-    Amiri_400Regular,
-    Amiri_700Bold,
+  const [kfgqpcLoaded, kfgqpcError] = useLocalFonts({
+    KFGQPCHafsUthmanic: require("../assets/fonts/KFGQPCHafsUthmanic.otf"),
   });
 
-  const fontsLoaded = interLoaded && amiriLoaded;
-  const fontError = interError || amiriError;
+  const [notoLoaded, notoError] = useNotoFonts({
+    NotoNaskhArabic_400Regular,
+    NotoNaskhArabic_700Bold,
+  });
+
+  const fontsLoaded = interLoaded && kfgqpcLoaded && notoLoaded;
+  const fontError = interError || kfgqpcError || notoError;
 
   useEffect(() => {
     if (fontsLoaded || fontError) {

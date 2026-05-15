@@ -15,6 +15,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
 import { useBookmarks } from "@/context/BookmarkContext";
+import { getArabicFontFamily, useQuranSettings } from "@/context/QuranContext";
 import SurahCard, { SurahMeta } from "@/components/SurahCard";
 
 async function fetchSurahs(): Promise<SurahMeta[]> {
@@ -28,7 +29,10 @@ export default function QuranScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { lastRead } = useBookmarks();
+  const { settings } = useQuranSettings();
   const [search, setSearch] = useState("");
+
+  const arabicFont = getArabicFontFamily(settings.fontType);
 
   const { data: surahs, isLoading, error } = useQuery({
     queryKey: ["surahs"],
@@ -59,7 +63,7 @@ export default function QuranScreen() {
           },
         ]}
       >
-        <Text style={[styles.headerTitle, { color: colors.foreground }]}>
+        <Text style={[styles.headerTitle, { color: colors.foreground, fontFamily: arabicFont }]}>
           القرآن الكريم
         </Text>
         <Text style={[styles.headerSub, { color: colors.mutedForeground }]}>
@@ -201,8 +205,8 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     fontSize: 28,
-    fontFamily: "Amiri_400Regular",
     textAlign: "right",
+    writingDirection: "rtl",
   },
   headerSub: {
     fontSize: 13,

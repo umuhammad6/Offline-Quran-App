@@ -14,6 +14,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
 import { Ionicons } from "@expo/vector-icons";
+import { getArabicFontFamily, useQuranSettings } from "@/context/QuranContext";
 
 const TOTAL_AYAHS = 6236;
 const STORAGE_KEY = "quran_ayah_of_day";
@@ -81,8 +82,11 @@ async function fetchAyahDetails(number: number): Promise<AyahDetails> {
 export default function AyahOfDayScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const { settings } = useQuranSettings();
   const [ayahNumber, setAyahNumber] = useState<number | null>(null);
   const [showTafseer, setShowTafseer] = useState(false);
+
+  const arabicFont = getArabicFontFamily(settings.fontType);
 
   useEffect(() => {
     getDailyAyahNumber().then(setAyahNumber);
@@ -125,10 +129,7 @@ export default function AyahOfDayScreen() {
             {[0, 1, 2].map((i) => (
               <View
                 key={i}
-                style={[
-                  styles.starDot,
-                  { backgroundColor: colors.accent },
-                ]}
+                style={[styles.starDot, { backgroundColor: colors.accent }]}
               />
             ))}
           </View>
@@ -180,7 +181,12 @@ export default function AyahOfDayScreen() {
               <Text
                 style={[
                   styles.arabicText,
-                  { color: colors.foreground },
+                  {
+                    color: colors.foreground,
+                    fontFamily: arabicFont,
+                    fontSize: settings.arabicFontSize,
+                    lineHeight: settings.arabicFontSize * 1.9,
+                  },
                 ]}
               >
                 {data.text}
@@ -236,13 +242,8 @@ export default function AyahOfDayScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  scroll: {
-    padding: 20,
-    gap: 16,
-  },
+  container: { flex: 1 },
+  scroll: { padding: 20, gap: 16 },
   heroCard: {
     borderRadius: 20,
     padding: 28,
@@ -254,20 +255,9 @@ const styles = StyleSheet.create({
     fontFamily: "Inter_600SemiBold",
     letterSpacing: 2,
   },
-  heroDate: {
-    fontSize: 16,
-    fontFamily: "Inter_400Regular",
-  },
-  starRow: {
-    flexDirection: "row",
-    gap: 6,
-    marginTop: 8,
-  },
-  starDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-  },
+  heroDate: { fontSize: 16, fontFamily: "Inter_400Regular" },
+  starRow: { flexDirection: "row", gap: 6, marginTop: 8 },
+  starDot: { width: 6, height: 6, borderRadius: 3 },
   center: {
     alignItems: "center",
     justifyContent: "center",
@@ -279,15 +269,8 @@ const styles = StyleSheet.create({
     fontFamily: "Inter_400Regular",
     textAlign: "center",
   },
-  retryBtn: {
-    borderRadius: 10,
-    paddingHorizontal: 24,
-    paddingVertical: 10,
-  },
-  retryText: {
-    fontSize: 14,
-    fontFamily: "Inter_600SemiBold",
-  },
+  retryBtn: { borderRadius: 10, paddingHorizontal: 24, paddingVertical: 10 },
+  retryText: { fontSize: 14, fontFamily: "Inter_600SemiBold" },
   surahBadge: {
     borderRadius: 10,
     borderWidth: 1,
@@ -295,21 +278,10 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     alignSelf: "center",
   },
-  surahBadgeText: {
-    fontSize: 14,
-    fontFamily: "Inter_500Medium",
-  },
-  arabicCard: {
-    borderRadius: 16,
-    borderWidth: 1,
-    padding: 24,
-    gap: 16,
-  },
+  surahBadgeText: { fontSize: 14, fontFamily: "Inter_500Medium" },
+  arabicCard: { borderRadius: 16, borderWidth: 1, padding: 24, gap: 16 },
   arabicText: {
-    fontSize: 28,
-    fontFamily: "Amiri_400Regular",
-    textAlign: "center",
-    lineHeight: 52,
+    textAlign: "right",
     writingDirection: "rtl",
   },
   divider: {
@@ -333,20 +305,9 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
   },
-  tafseerLabel: {
-    fontSize: 15,
-    fontFamily: "Inter_600SemiBold",
-  },
-  tafseerCard: {
-    borderRadius: 16,
-    borderWidth: 1,
-    padding: 20,
-    gap: 12,
-  },
-  tafseerTitle: {
-    fontSize: 16,
-    fontFamily: "Inter_600SemiBold",
-  },
+  tafseerLabel: { fontSize: 15, fontFamily: "Inter_600SemiBold" },
+  tafseerCard: { borderRadius: 16, borderWidth: 1, padding: 20, gap: 12 },
+  tafseerTitle: { fontSize: 16, fontFamily: "Inter_600SemiBold" },
   tafseerText: {
     fontSize: 14,
     fontFamily: "Inter_400Regular",
