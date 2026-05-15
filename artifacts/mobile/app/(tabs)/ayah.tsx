@@ -1,9 +1,12 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useQuery } from "@tanstack/react-query";
 import { LinearGradient } from "expo-linear-gradient";
-import React, { useEffect, useState } from "react";
+import * as MediaLibrary from "expo-media-library";
+import * as Sharing from "expo-sharing";
+import React, { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Platform,
   ScrollView,
   StyleSheet,
@@ -11,6 +14,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { captureRef } from "react-native-view-shot";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
 import { Ionicons } from "@expo/vector-icons";
@@ -37,7 +41,6 @@ interface AyahDetails {
     revelationType: string;
   };
   translation: string;
-  tafseer: string;
 }
 
 function getTodayString(): string {
@@ -65,17 +68,16 @@ async function getDailyAyahNumber(): Promise<number> {
 
 async function fetchAyahDetails(number: number): Promise<AyahDetails> {
   const res = await fetch(
-    `https://api.alquran.cloud/v1/ayah/${number}/editions/quran-uthmani,en.sahih,en.muyassar`
+    `https://api.alquran.cloud/v1/ayah/${number}/editions/quran-uthmani,en.sahih`
   );
   const json = await res.json();
-  const [arabic, translation, tafseer] = json.data;
+  const [arabic, translation] = json.data;
   return {
     number,
     text: arabic.text,
     numberInSurah: arabic.numberInSurah,
     surah: arabic.surah,
     translation: translation.text,
-    tafseer: tafseer.text,
   };
 }
 
@@ -84,7 +86,8 @@ export default function AyahOfDayScreen() {
   const insets = useSafeAreaInsets();
   const { settings } = useQuranSettings();
   const [ayahNumber, setAyahNumber] = useState<number | null>(null);
-  const [showTafseer, setShowTafseer] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const cardRef = useRef<View>(null);
 
   const arabicFont = getArabicFontFamily(settings.fontType);
 
@@ -99,6 +102,42 @@ export default function AyahOfDayScreen() {
     staleTime: 1000 * 60 * 60 * 12,
   });
 
+  const handleSaveAsImage = async (mode: "share" | "save") => {
+    if (!cardRef.current || !data) return;
+    setSaving(true);
+    try {
+      const uri = await captureRef(cardRef, {
+        format: "png",
+        quality: 1,
+        result: "tmpfile",
+      });
+
+      if (mode === "share") {
+        const isAvail = await Sharing.isAvailableAsync();
+        if (isAvail) {
+          await Sharing.shareAsync(uri, { mimeType: "image/png" });
+        } else {
+          Alert.alert("Error", "Sharing not available on this device.");
+        }
+      } else {
+        const { status } = await MediaLibrary.requestPermissionsAsync();
+        if (status === "granted") {
+          await MediaLibrary.saveToLibraryAsync(uri);
+          Alert.alert("Saved", "Image saved to your camera roll.");
+        } else {
+          Alert.alert(
+            "Permission needed",
+            "Please allow access to save images."
+          );
+        }
+      }
+    } catch {
+      Alert.alert("Error", "Failed to capture the image. Please try again.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const bottomPad = Platform.OS === "web" ? 84 + 34 : 100;
 
@@ -112,13 +151,23 @@ export default function AyahOfDayScreen() {
         showsVerticalScrollIndicator={false}
       >
         <LinearGradient
-          colors={[colors.primary, colors.primary + "CC"]}
+          colors={[colors.primary, colors.primary + "BB"]}
           style={styles.heroCard}
         >
-          <Text style={[styles.heroLabel, { color: colors.primaryForeground, opacity: 0.7 }]}>
+          <Text
+            style={[
+              styles.heroLabel,
+              { color: colors.primaryForeground, opacity: 0.75 },
+            ]}
+          >
             AYAH OF THE DAY
           </Text>
-          <Text style={[styles.heroDate, { color: colors.primaryForeground, opacity: 0.8 }]}>
+          <Text
+            style={[
+              styles.heroDate,
+              { color: colors.primaryForeground, opacity: 0.85 },
+            ]}
+          >
             {new Date().toLocaleDateString("en-US", {
               weekday: "long",
               month: "long",
@@ -143,7 +192,11 @@ export default function AyahOfDayScreen() {
 
         {error && (
           <View style={styles.center}>
-            <Ionicons name="wifi-outline" size={40} color={colors.mutedForeground} />
+            <Ionicons
+              name="wifi-outline"
+              size={40}
+              color={colors.mutedForeground}
+            />
             <Text style={[styles.errorText, { color: colors.mutedForeground }]}>
               Failed to load. Tap to retry.
             </Text>
@@ -151,7 +204,9 @@ export default function AyahOfDayScreen() {
               style={[styles.retryBtn, { backgroundColor: colors.primary }]}
               onPress={() => refetch()}
             >
-              <Text style={[styles.retryText, { color: colors.primaryForeground }]}>
+              <Text
+                style={[styles.retryText, { color: colors.primaryForeground }]}
+              >
                 Retry
               </Text>
             </TouchableOpacity>
@@ -163,7 +218,10 @@ export default function AyahOfDayScreen() {
             <View
               style={[
                 styles.surahBadge,
-                { backgroundColor: colors.card, borderColor: colors.border },
+                {
+                  backgroundColor: colors.card,
+                  borderColor: colors.border,
+                },
               ]}
             >
               <Text style={[styles.surahBadgeText, { color: colors.mutedForeground }]}>
@@ -172,68 +230,106 @@ export default function AyahOfDayScreen() {
               </Text>
             </View>
 
+            {/* Capturable card */}
             <View
+              ref={cardRef}
               style={[
                 styles.arabicCard,
-                { backgroundColor: colors.card, borderColor: colors.border },
+                {
+                  backgroundColor: "#FFFFFF",
+                  borderColor: colors.border,
+                },
               ]}
+              collapsable={false}
             >
+              <View style={styles.cardWatermark}>
+                <Text style={[styles.watermarkText, { color: colors.primary + "44" }]}>
+                  The Holy Quran
+                </Text>
+              </View>
               <Text
                 style={[
                   styles.arabicText,
                   {
-                    color: colors.foreground,
+                    color: "#1A1A1A",
                     fontFamily: arabicFont,
                     fontSize: settings.arabicFontSize,
-                    lineHeight: settings.arabicFontSize * 1.9,
+                    lineHeight: settings.arabicFontSize * 2.0,
                   },
                 ]}
               >
                 {data.text}
               </Text>
 
-              <View style={[styles.divider, { backgroundColor: colors.accent }]} />
+              <View
+                style={[
+                  styles.divider,
+                  { backgroundColor: colors.accent },
+                ]}
+              />
 
-              <Text
-                style={[styles.translationText, { color: colors.mutedForeground }]}
-              >
-                {data.translation}
+              <Text style={styles.translationText}>{data.translation}</Text>
+
+              <Text style={styles.referenceText}>
+                — {data.surah.englishName} {data.numberInSurah}
               </Text>
             </View>
 
-            <TouchableOpacity
-              style={[
-                styles.tafseerToggle,
-                { backgroundColor: colors.card, borderColor: colors.border },
-              ]}
-              onPress={() => setShowTafseer((v) => !v)}
-              activeOpacity={0.7}
-            >
-              <Text style={[styles.tafseerLabel, { color: colors.primary }]}>
-                View Tafseer
-              </Text>
-              <Ionicons
-                name={showTafseer ? "chevron-up" : "chevron-down"}
-                size={18}
-                color={colors.primary}
-              />
-            </TouchableOpacity>
-
-            {showTafseer && (
-              <View
+            <View style={styles.imageActions}>
+              <TouchableOpacity
                 style={[
-                  styles.tafseerCard,
-                  { backgroundColor: colors.card, borderColor: colors.border },
+                  styles.imageBtn,
+                  { backgroundColor: colors.primary, flex: 1 },
                 ]}
+                onPress={() => handleSaveAsImage("share")}
+                disabled={saving}
               >
-                <Text style={[styles.tafseerTitle, { color: colors.foreground }]}>
-                  Commentary
+                {saving ? (
+                  <ActivityIndicator size="small" color={colors.primaryForeground} />
+                ) : (
+                  <>
+                    <Ionicons
+                      name="share-outline"
+                      size={18}
+                      color={colors.primaryForeground}
+                    />
+                    <Text
+                      style={[
+                        styles.imageBtnText,
+                        { color: colors.primaryForeground },
+                      ]}
+                    >
+                      Share as Image
+                    </Text>
+                  </>
+                )}
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.imageBtn,
+                  {
+                    backgroundColor: colors.card,
+                    borderColor: colors.border,
+                    borderWidth: 1,
+                    flex: 1,
+                  },
+                ]}
+                onPress={() => handleSaveAsImage("save")}
+                disabled={saving}
+              >
+                <Ionicons
+                  name="download-outline"
+                  size={18}
+                  color={colors.primary}
+                />
+                <Text
+                  style={[styles.imageBtnText, { color: colors.primary }]}
+                >
+                  Save to Photos
                 </Text>
-                <Text style={[styles.tafseerText, { color: colors.mutedForeground }]}>
-                  {data.tafseer}
-                </Text>
-              </View>
-            )}
+              </TouchableOpacity>
+            </View>
           </>
         )}
       </ScrollView>
@@ -243,7 +339,7 @@ export default function AyahOfDayScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  scroll: { padding: 20, gap: 16 },
+  scroll: { padding: 20, gap: 14 },
   heroCard: {
     borderRadius: 20,
     padding: 28,
@@ -269,7 +365,11 @@ const styles = StyleSheet.create({
     fontFamily: "Inter_400Regular",
     textAlign: "center",
   },
-  retryBtn: { borderRadius: 10, paddingHorizontal: 24, paddingVertical: 10 },
+  retryBtn: {
+    borderRadius: 10,
+    paddingHorizontal: 24,
+    paddingVertical: 10,
+  },
   retryText: { fontSize: 14, fontFamily: "Inter_600SemiBold" },
   surahBadge: {
     borderRadius: 10,
@@ -279,10 +379,28 @@ const styles = StyleSheet.create({
     alignSelf: "center",
   },
   surahBadgeText: { fontSize: 14, fontFamily: "Inter_500Medium" },
-  arabicCard: { borderRadius: 16, borderWidth: 1, padding: 24, gap: 16 },
+  arabicCard: {
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 24,
+    gap: 14,
+    overflow: "hidden",
+  },
+  cardWatermark: {
+    position: "absolute",
+    top: 12,
+    left: 16,
+  },
+  watermarkText: {
+    fontSize: 10,
+    fontFamily: "Inter_600SemiBold",
+    letterSpacing: 1,
+    textTransform: "uppercase",
+  },
   arabicText: {
     textAlign: "right",
     writingDirection: "rtl",
+    marginTop: 16,
   },
   divider: {
     height: 1.5,
@@ -291,26 +409,30 @@ const styles = StyleSheet.create({
     borderRadius: 1,
   },
   translationText: {
-    fontSize: 16,
-    fontFamily: "Inter_400Regular",
-    lineHeight: 26,
-    textAlign: "center",
-  },
-  tafseerToggle: {
-    borderRadius: 12,
-    borderWidth: 1,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  tafseerLabel: { fontSize: 15, fontFamily: "Inter_600SemiBold" },
-  tafseerCard: { borderRadius: 16, borderWidth: 1, padding: 20, gap: 12 },
-  tafseerTitle: { fontSize: 16, fontFamily: "Inter_600SemiBold" },
-  tafseerText: {
-    fontSize: 14,
+    fontSize: 15,
     fontFamily: "Inter_400Regular",
     lineHeight: 24,
+    textAlign: "center",
+    color: "#1A1A1A",
   },
+  referenceText: {
+    fontSize: 12,
+    fontFamily: "Inter_500Medium",
+    textAlign: "center",
+    color: "#6B7280",
+  },
+  imageActions: {
+    flexDirection: "row",
+    gap: 10,
+  },
+  imageBtn: {
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+  },
+  imageBtnText: { fontSize: 14, fontFamily: "Inter_600SemiBold" },
 });

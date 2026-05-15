@@ -10,7 +10,9 @@ export interface QuranSettings {
   showTranslation: boolean;
   showTafseer: boolean;
   translationEdition: string;
-  tafseerEdition: string;
+  tafseerSource: string;
+  theme: "light" | "dark" | "system";
+  continuousMode: boolean;
 }
 
 const DEFAULT_SETTINGS: QuranSettings = {
@@ -22,7 +24,9 @@ const DEFAULT_SETTINGS: QuranSettings = {
   showTranslation: true,
   showTafseer: false,
   translationEdition: "en.sahih",
-  tafseerEdition: "en.muyassar",
+  tafseerSource: "169",
+  theme: "light",
+  continuousMode: false,
 };
 
 export const ARABIC_FONT_FAMILIES: Record<QuranSettings["fontType"], string> = {
@@ -31,12 +35,23 @@ export const ARABIC_FONT_FAMILIES: Record<QuranSettings["fontType"], string> = {
 };
 
 export const FONT_TYPE_LABELS: Record<QuranSettings["fontType"], string> = {
-  uthmani: "KFGQPC Uthmani",
-  indopak: "Indo-Pak Naskh",
+  uthmani: "Uthmani / Madani",
+  indopak: "Indo-Pak / Farsi",
+};
+
+export const FONT_TYPE_DESCRIPTIONS: Record<QuranSettings["fontType"], string> = {
+  uthmani:
+    "King Fahd Complex (KFGQPC) Hafs font — the Madinah Mushaf style with Uthmani orthography and diacritical marks",
+  indopak:
+    "Naskh style used across South Asia and Iran — same Uthmani text standard with Indo-Pak diacritical conventions",
 };
 
 export function getArabicFontFamily(fontType: QuranSettings["fontType"]): string {
   return ARABIC_FONT_FAMILIES[fontType];
+}
+
+export function getArabicEdition(fontType: QuranSettings["fontType"]): string {
+  return fontType === "uthmani" ? "quran-uthmani" : "quran-simple-enhanced";
 }
 
 export const TRANSLATION_OPTIONS = [
@@ -48,8 +63,9 @@ export const TRANSLATION_OPTIONS = [
   { id: "tr.ates", label: "Ates", language: "Turkish" },
 ];
 
-export const TAFSEER_OPTIONS = [
-  { id: "en.muyassar", label: "Muyassar (Simplified)", language: "English" },
+export const TAFSEER_SOURCES = [
+  { id: "169", label: "Tafsir Ibn Kathir", language: "English (Abridged)" },
+  { id: "93", label: "Tazkirul Quran", language: "English" },
 ];
 
 interface QuranContextType {
@@ -60,7 +76,7 @@ interface QuranContextType {
   ) => void;
 }
 
-const QuranContext = createContext<QuranContextType | undefined>(undefined);
+export const QuranContext = createContext<QuranContextType | undefined>(undefined);
 
 export function QuranProvider({ children }: { children: React.ReactNode }) {
   const [settings, setSettings] = useState<QuranSettings>(DEFAULT_SETTINGS);

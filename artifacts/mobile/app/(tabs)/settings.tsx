@@ -15,21 +15,33 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
 import {
   ARABIC_FONT_FAMILIES,
+  FONT_TYPE_DESCRIPTIONS,
   FONT_TYPE_LABELS,
-  TAFSEER_OPTIONS,
+  TAFSEER_SOURCES,
   TRANSLATION_OPTIONS,
   useQuranSettings,
   type QuranSettings,
 } from "@/context/QuranContext";
 
+function SectionHeader({ title }: { title: string }) {
+  const colors = useColors();
+  return (
+    <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>
+      {title}
+    </Text>
+  );
+}
+
 function SettingRow({
   label,
   children,
   last,
+  description,
 }: {
   label: string;
   children: React.ReactNode;
   last?: boolean;
+  description?: string;
 }) {
   const colors = useColors();
   return (
@@ -39,9 +51,18 @@ function SettingRow({
         { borderBottomColor: last ? "transparent" : colors.border },
       ]}
     >
-      <Text style={[styles.settingLabel, { color: colors.foreground }]}>
-        {label}
-      </Text>
+      <View style={styles.settingLabelGroup}>
+        <Text style={[styles.settingLabel, { color: colors.foreground }]}>
+          {label}
+        </Text>
+        {description ? (
+          <Text
+            style={[styles.settingDesc, { color: colors.mutedForeground }]}
+          >
+            {description}
+          </Text>
+        ) : null}
+      </View>
       {children}
     </View>
   );
@@ -74,7 +95,7 @@ function SizeControl({
         <Ionicons
           name="remove"
           size={18}
-          color={value <= min ? colors.mutedForeground : colors.foreground}
+          color={value <= min ? colors.mutedForeground : colors.primary}
         />
       </TouchableOpacity>
       <Text style={[styles.sizeValue, { color: colors.foreground }]}>
@@ -91,7 +112,7 @@ function SizeControl({
         <Ionicons
           name="add"
           size={18}
-          color={value >= max ? colors.mutedForeground : colors.foreground}
+          color={value >= max ? colors.mutedForeground : colors.primary}
         />
       </TouchableOpacity>
     </View>
@@ -110,15 +131,21 @@ export default function SettingsScreen() {
   const bottomPad = Platform.OS === "web" ? 84 + 34 : 100;
 
   const pickerOptions =
-    pickerMode === "translation" ? TRANSLATION_OPTIONS : TAFSEER_OPTIONS;
+    pickerMode === "translation" ? TRANSLATION_OPTIONS : TAFSEER_SOURCES;
   const pickerValue =
     pickerMode === "translation"
       ? settings.translationEdition
-      : settings.tafseerEdition;
+      : settings.tafseerSource;
   const pickerKey: keyof QuranSettings =
-    pickerMode === "translation" ? "translationEdition" : "tafseerEdition";
+    pickerMode === "translation" ? "translationEdition" : "tafseerSource";
 
   const fontTypes: QuranSettings["fontType"][] = ["uthmani", "indopak"];
+  const themes: { id: QuranSettings["theme"]; label: string; icon: string }[] =
+    [
+      { id: "light", label: "Light", icon: "sunny-outline" },
+      { id: "dark", label: "Dark", icon: "moon-outline" },
+      { id: "system", label: "System", icon: "phone-portrait-outline" },
+    ];
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -133,15 +160,55 @@ export default function SettingsScreen() {
           Settings
         </Text>
 
+        {/* APPEARANCE */}
         <View
           style={[
             styles.section,
             { backgroundColor: colors.card, borderColor: colors.border },
           ]}
         >
-          <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>
-            DISPLAY
-          </Text>
+          <SectionHeader title="APPEARANCE" />
+
+          <SettingRow label="Theme">
+            <View style={styles.themeRow}>
+              {themes.map((t) => {
+                const active = settings.theme === t.id;
+                return (
+                  <TouchableOpacity
+                    key={t.id}
+                    style={[
+                      styles.themeOption,
+                      {
+                        backgroundColor: active
+                          ? colors.primary
+                          : colors.secondary,
+                        borderColor: active ? colors.primary : colors.border,
+                      },
+                    ]}
+                    onPress={() => updateSetting("theme", t.id)}
+                  >
+                    <Ionicons
+                      name={t.icon as any}
+                      size={15}
+                      color={active ? colors.primaryForeground : colors.foreground}
+                    />
+                    <Text
+                      style={[
+                        styles.themeLabel,
+                        {
+                          color: active
+                            ? colors.primaryForeground
+                            : colors.foreground,
+                        },
+                      ]}
+                    >
+                      {t.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </SettingRow>
 
           <SettingRow label="Show Translation">
             <Switch
@@ -161,7 +228,7 @@ export default function SettingsScreen() {
             />
           </SettingRow>
 
-          <SettingRow label="Tajweed Colors" last>
+          <SettingRow label="Tajweed Colors">
             <Switch
               value={settings.showTajweed}
               onValueChange={(v) => updateSetting("showTajweed", v)}
@@ -169,51 +236,85 @@ export default function SettingsScreen() {
               thumbColor={colors.card}
             />
           </SettingRow>
+
+          <SettingRow
+            label="Continuous Mode"
+            description="Show entire surah as flowing text instead of individual cards"
+            last
+          >
+            <Switch
+              value={settings.continuousMode}
+              onValueChange={(v) => updateSetting("continuousMode", v)}
+              trackColor={{ false: colors.muted, true: colors.primary }}
+              thumbColor={colors.card}
+            />
+          </SettingRow>
         </View>
 
+        {/* ARABIC FONT */}
         <View
           style={[
             styles.section,
             { backgroundColor: colors.card, borderColor: colors.border },
           ]}
         >
-          <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>
-            ARABIC FONT
-          </Text>
+          <SectionHeader title="ARABIC FONT" />
 
-          <SettingRow label="Font Style">
-            <View style={styles.fontToggle}>
-              {fontTypes.map((type) => (
+          <View style={styles.fontTypesContainer}>
+            {fontTypes.map((type) => {
+              const active = settings.fontType === type;
+              return (
                 <TouchableOpacity
                   key={type}
                   style={[
-                    styles.fontOption,
+                    styles.fontTypeCard,
                     {
-                      backgroundColor:
-                        settings.fontType === type
-                          ? colors.primary
-                          : colors.secondary,
+                      backgroundColor: active ? colors.primary + "18" : colors.secondary,
+                      borderColor: active ? colors.primary : colors.border,
                     },
                   ]}
                   onPress={() => updateSetting("fontType", type)}
                 >
+                  <View style={styles.fontTypeHeader}>
+                    <Text
+                      style={[
+                        styles.fontTypeLabel,
+                        { color: active ? colors.primary : colors.foreground },
+                      ]}
+                    >
+                      {FONT_TYPE_LABELS[type]}
+                    </Text>
+                    {active && (
+                      <Ionicons
+                        name="checkmark-circle"
+                        size={18}
+                        color={colors.primary}
+                      />
+                    )}
+                  </View>
                   <Text
                     style={[
-                      styles.fontOptionText,
+                      styles.fontTypeArabic,
                       {
-                        color:
-                          settings.fontType === type
-                            ? colors.primaryForeground
-                            : colors.foreground,
+                        fontFamily: ARABIC_FONT_FAMILIES[type],
+                        color: colors.foreground,
                       },
                     ]}
                   >
-                    {FONT_TYPE_LABELS[type]}
+                    بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ
+                  </Text>
+                  <Text
+                    style={[
+                      styles.fontTypeDesc,
+                      { color: colors.mutedForeground },
+                    ]}
+                  >
+                    {FONT_TYPE_DESCRIPTIONS[type]}
                   </Text>
                 </TouchableOpacity>
-              ))}
-            </View>
-          </SettingRow>
+              );
+            })}
+          </View>
 
           <SettingRow label="Arabic Size">
             <SizeControl
@@ -228,36 +329,6 @@ export default function SettingsScreen() {
               }
             />
           </SettingRow>
-
-          <View
-            style={[
-              styles.arabicPreview,
-              { backgroundColor: colors.secondary, borderColor: colors.border },
-            ]}
-          >
-            <Text
-              style={[
-                {
-                  color: colors.foreground,
-                  fontSize: settings.arabicFontSize,
-                  fontFamily: ARABIC_FONT_FAMILIES[settings.fontType],
-                  textAlign: "right",
-                  writingDirection: "rtl",
-                  lineHeight: settings.arabicFontSize * 1.9,
-                },
-              ]}
-            >
-              بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ
-            </Text>
-            <Text
-              style={[
-                styles.fontLabel,
-                { color: colors.mutedForeground },
-              ]}
-            >
-              {FONT_TYPE_LABELS[settings.fontType]}
-            </Text>
-          </View>
 
           <SettingRow label="Translation Size">
             <SizeControl
@@ -294,15 +365,14 @@ export default function SettingsScreen() {
           </SettingRow>
         </View>
 
+        {/* CONTENT */}
         <View
           style={[
             styles.section,
             { backgroundColor: colors.card, borderColor: colors.border },
           ]}
         >
-          <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>
-            CONTENT
-          </Text>
+          <SectionHeader title="CONTENT" />
 
           <TouchableOpacity
             style={[styles.settingRow, { borderBottomColor: colors.border }]}
@@ -331,12 +401,22 @@ export default function SettingsScreen() {
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.settingRow, { borderBottomColor: "transparent" }]}
+            style={[
+              styles.settingRow,
+              { borderBottomColor: "transparent" },
+            ]}
             onPress={() => setPickerMode("tafseer")}
           >
-            <Text style={[styles.settingLabel, { color: colors.foreground }]}>
-              Tafseer
-            </Text>
+            <View style={styles.settingLabelGroup}>
+              <Text style={[styles.settingLabel, { color: colors.foreground }]}>
+                Tafseer Source
+              </Text>
+              <Text
+                style={[styles.settingDesc, { color: colors.mutedForeground }]}
+              >
+                Used when Tafseer is enabled above
+              </Text>
+            </View>
             <View style={styles.pickerValue}>
               <Text
                 style={[
@@ -344,8 +424,9 @@ export default function SettingsScreen() {
                   { color: colors.mutedForeground },
                 ]}
               >
-                {TAFSEER_OPTIONS.find((t) => t.id === settings.tafseerEdition)
-                  ?.label ?? settings.tafseerEdition}
+                {TAFSEER_SOURCES.find(
+                  (t) => t.id === settings.tafseerSource
+                )?.label ?? "Ibn Kathir"}
               </Text>
               <Ionicons
                 name="chevron-forward"
@@ -374,14 +455,13 @@ export default function SettingsScreen() {
             ]}
           >
             <View
-              style={[
-                styles.pickerHandle,
-                { backgroundColor: colors.border },
-              ]}
+              style={[styles.pickerHandle, { backgroundColor: colors.border }]}
             />
-            <Text style={[styles.pickerTitle, { color: colors.foreground }]}>
+            <Text
+              style={[styles.pickerTitle, { color: colors.foreground }]}
+            >
               Select{" "}
-              {pickerMode === "translation" ? "Translation" : "Tafseer"}
+              {pickerMode === "translation" ? "Translation" : "Tafseer Source"}
             </Text>
             {pickerOptions.map((opt) => (
               <TouchableOpacity
@@ -414,11 +494,7 @@ export default function SettingsScreen() {
                   </Text>
                 </View>
                 {pickerValue === opt.id && (
-                  <Ionicons
-                    name="checkmark"
-                    size={20}
-                    color={colors.primary}
-                  />
+                  <Ionicons name="checkmark" size={20} color={colors.primary} />
                 )}
               </TouchableOpacity>
             ))}
@@ -454,18 +530,44 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     gap: 12,
   },
-  settingLabel: {
-    fontSize: 15,
+  settingLabelGroup: { flex: 1, gap: 2 },
+  settingLabel: { fontSize: 15, fontFamily: "Inter_400Regular" },
+  settingDesc: {
+    fontSize: 12,
     fontFamily: "Inter_400Regular",
-    flex: 1,
+    lineHeight: 16,
   },
-  fontToggle: { flexDirection: "row", gap: 6, flexWrap: "wrap" },
-  fontOption: {
+  themeRow: { flexDirection: "row", gap: 6 },
+  themeOption: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
     borderRadius: 8,
-    paddingHorizontal: 12,
+    borderWidth: 1,
+    paddingHorizontal: 10,
     paddingVertical: 6,
   },
-  fontOptionText: { fontSize: 12, fontFamily: "Inter_500Medium" },
+  themeLabel: { fontSize: 12, fontFamily: "Inter_500Medium" },
+  fontTypesContainer: {
+    gap: 10,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "transparent",
+  },
+  fontTypeCard: {
+    borderRadius: 12,
+    borderWidth: 1.5,
+    padding: 14,
+    gap: 8,
+  },
+  fontTypeHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  fontTypeLabel: { fontSize: 14, fontFamily: "Inter_600SemiBold" },
+  fontTypeArabic: { fontSize: 22, textAlign: "right", writingDirection: "rtl", lineHeight: 44 },
+  fontTypeDesc: { fontSize: 12, fontFamily: "Inter_400Regular", lineHeight: 17 },
   sizeControl: { flexDirection: "row", alignItems: "center", gap: 12 },
   sizeBtn: {
     width: 32,
@@ -480,21 +582,8 @@ const styles = StyleSheet.create({
     width: 28,
     textAlign: "center",
   },
-  arabicPreview: {
-    borderRadius: 10,
-    borderWidth: 1,
-    padding: 16,
-    marginVertical: 10,
-    alignItems: "flex-end",
-    gap: 6,
-  },
-  fontLabel: {
-    fontSize: 11,
-    fontFamily: "Inter_400Regular",
-    alignSelf: "flex-start",
-  },
   pickerValue: { flexDirection: "row", alignItems: "center", gap: 6 },
-  pickerValueText: { fontSize: 14, fontFamily: "Inter_400Regular" },
+  pickerValueText: { fontSize: 13, fontFamily: "Inter_400Regular" },
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.5)",
@@ -505,7 +594,7 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 24,
     borderWidth: 1,
     padding: 20,
-    paddingBottom: 40,
+    paddingBottom: 44,
   },
   pickerHandle: {
     width: 40,
@@ -514,7 +603,11 @@ const styles = StyleSheet.create({
     alignSelf: "center",
     marginBottom: 16,
   },
-  pickerTitle: { fontSize: 18, fontFamily: "Inter_600SemiBold", marginBottom: 12 },
+  pickerTitle: {
+    fontSize: 18,
+    fontFamily: "Inter_600SemiBold",
+    marginBottom: 12,
+  },
   pickerOption: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -523,5 +616,9 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
   },
   pickerOptLabel: { fontSize: 15, fontFamily: "Inter_500Medium" },
-  pickerOptLang: { fontSize: 12, fontFamily: "Inter_400Regular", marginTop: 2 },
+  pickerOptLang: {
+    fontSize: 12,
+    fontFamily: "Inter_400Regular",
+    marginTop: 2,
+  },
 });

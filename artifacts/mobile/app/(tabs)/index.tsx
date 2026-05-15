@@ -63,12 +63,25 @@ export default function QuranScreen() {
           },
         ]}
       >
-        <Text style={[styles.headerTitle, { color: colors.foreground, fontFamily: arabicFont }]}>
-          القرآن الكريم
-        </Text>
-        <Text style={[styles.headerSub, { color: colors.mutedForeground }]}>
-          The Holy Quran
-        </Text>
+        <View style={styles.titleRow}>
+          <View style={styles.titleLeft}>
+            <Text style={[styles.headerTitle, { color: colors.foreground }]}>
+              The Holy Quran
+            </Text>
+            <Text style={[styles.headerSub, { color: colors.mutedForeground }]}>
+              114 Surahs · 6,236 Ayahs
+            </Text>
+          </View>
+          <Text
+            style={[
+              styles.headerArabic,
+              { color: colors.primary, fontFamily: arabicFont },
+            ]}
+          >
+            القرآن الكريم
+          </Text>
+        </View>
+
         <View
           style={[
             styles.searchBar,
@@ -78,7 +91,7 @@ export default function QuranScreen() {
           <Ionicons name="search" size={18} color={colors.mutedForeground} />
           <TextInput
             style={[styles.searchInput, { color: colors.foreground }]}
-            placeholder="Search surah..."
+            placeholder="Search surah by name or number..."
             placeholderTextColor={colors.mutedForeground}
             value={search}
             onChangeText={setSearch}
@@ -103,7 +116,11 @@ export default function QuranScreen() {
 
       {error ? (
         <View style={styles.center}>
-          <Ionicons name="wifi-outline" size={40} color={colors.mutedForeground} />
+          <Ionicons
+            name="wifi-outline"
+            size={40}
+            color={colors.mutedForeground}
+          />
           <Text style={[styles.errorText, { color: colors.mutedForeground }]}>
             Failed to load. Check your connection.
           </Text>
@@ -115,6 +132,10 @@ export default function QuranScreen() {
           data={filtered}
           keyExtractor={(s) => s.number.toString()}
           contentInsetAdjustmentBehavior="automatic"
+          windowSize={7}
+          maxToRenderPerBatch={10}
+          initialNumToRender={12}
+          removeClippedSubviews={Platform.OS !== "web"}
           ListHeaderComponent={
             lastRead ? (
               <TouchableOpacity
@@ -169,7 +190,7 @@ export default function QuranScreen() {
                 />
               </TouchableOpacity>
             ) : (
-              <View style={styles.listHeaderSpace} />
+              <View style={{ height: 8 }} />
             )
           }
           renderItem={({ item }) => (
@@ -194,24 +215,36 @@ export default function QuranScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
+  container: { flex: 1 },
   header: {
     paddingHorizontal: 20,
     paddingBottom: 12,
     borderBottomWidth: 1,
-    gap: 2,
+    gap: 12,
   },
+  titleRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  titleLeft: { flex: 1 },
   headerTitle: {
-    fontSize: 28,
-    textAlign: "right",
-    writingDirection: "rtl",
+    fontSize: 22,
+    fontFamily: "Inter_700Bold",
+    letterSpacing: -0.3,
   },
   headerSub: {
-    fontSize: 13,
+    fontSize: 12,
     fontFamily: "Inter_400Regular",
-    marginBottom: 10,
+    marginTop: 2,
+  },
+  headerArabic: {
+    fontSize: 22,
+    textAlign: "right",
+    writingDirection: "rtl",
+    lineHeight: 36,
+    flexShrink: 1,
   },
   searchBar: {
     flexDirection: "row",
@@ -251,20 +284,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 12,
   },
-  continueText: {
-    gap: 2,
-  },
+  continueText: { gap: 2 },
   continueLabel: {
     fontSize: 11,
     fontFamily: "Inter_500Medium",
     letterSpacing: 0.5,
     textTransform: "uppercase",
   },
-  continueTitle: {
-    fontSize: 15,
-    fontFamily: "Inter_600SemiBold",
-  },
-  listHeaderSpace: {
-    height: 8,
-  },
+  continueTitle: { fontSize: 15, fontFamily: "Inter_600SemiBold" },
 });

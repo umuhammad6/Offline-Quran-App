@@ -1,27 +1,33 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useQuery } from "@tanstack/react-query";
 import { useLocalSearchParams, useNavigation } from "expo-router";
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
+  Modal,
   Platform,
+  Pressable,
+  ScrollView,
+  Share,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import * as Clipboard from "expo-clipboard";
+import * as Haptics from "expo-haptics";
 import { useColors } from "@/hooks/useColors";
-import { getArabicFontFamily, useQuranSettings } from "@/context/QuranContext";
+import {
+  getArabicEdition,
+  getArabicFontFamily,
+  useQuranSettings,
+} from "@/context/QuranContext";
 import { useBookmarks } from "@/context/BookmarkContext";
 import { AyahData } from "@/components/AyahItem";
 import TajweedText, { stripTajweedTags } from "@/components/TajweedText";
-import * as Haptics from "expo-haptics";
-import {
-  Modal,
-  Pressable,
-} from "react-native";
 
 interface ApiAyah {
   number: number;
@@ -51,6 +57,19 @@ async function fetchSurahEdition(
   return json.data;
 }
 
+async function fetchAyahTafseer(
+  surahId: number,
+  ayahNum: number,
+  tafsirId: string
+): Promise<string> {
+  const res = await fetch(
+    `https://api.quran.com/api/v4/tafsirs/${tafsirId}/by_ayah/${surahId}:${ayahNum}`
+  );
+  const json = await res.json();
+  const raw = json.tafsir?.text ?? "";
+  return raw.replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
+}
+
 const BISMILLAH = "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ";
 
 export default function SurahScreen() {
@@ -64,13 +83,24 @@ export default function SurahScreen() {
   const { settings } = useQuranSettings();
   const { addBookmark, removeBookmark, isBookmarked, setLastRead, bookmarks } =
     useBookmarks();
-  const flatRef = useRef<FlatList>(null);
-  const [actionAyah, setActionAyah] = useState<AyahData | null>(null);
 
   const surahId = Number(id);
+  const fontFamily = getArabicFontFamily(settings.fontType);
   const arabicEdition = settings.showTajweed
     ? "quran-tajweed"
-    : "quran-uthmani";
+    : getArabicEdition(settings.fontType);
+
+  const flatRef = useRef<FlatList>(null);
+  const [actionAyah, setActionAyah] = useState<AyahData | null>(null);
+  const [tafseerCache, setTafseerCache] = useState<Map<number, string | null>>(
+    new Map()
+  );
+  const [loadingTafseers, setLoadingTafseers] = useState<Set<number>>(
+    new Set()
+  );
+  const [expandedTafseers, setExpandedTafseers] = useState<Set<number>>(
+    new Set()
+  );
 
   const { data: arabicData, isLoading: arabicLoading } = useQuery({
     queryKey: ["surah-arabic", surahId, arabicEdition],
@@ -80,31 +110,30 @@ export default function SurahScreen() {
 
   const { data: translationData } = useQuery({
     queryKey: ["surah-translation", surahId, settings.translationEdition],
-    queryFn: () =>
-      fetchSurahEdition(surahId, settings.translationEdition),
+    queryFn: () => fetchSurahEdition(surahId, settings.translationEdition),
     enabled: settings.showTranslation,
-    staleTime: 1000 * 60 * 60,
-  });
-
-  const { data: tafseerData } = useQuery({
-    queryKey: ["surah-tafseer", surahId, settings.tafseerEdition],
-    queryFn: () => fetchSurahEdition(surahId, settings.tafseerEdition),
-    enabled: settings.showTafseer,
     staleTime: 1000 * 60 * 60,
   });
 
   useEffect(() => {
     if (arabicData) {
       navigation.setOptions({
-        title: `${arabicData.englishName}`,
+        title: arabicData.englishName,
         headerRight: () => (
-          <Text style={{ fontFamily: fontFamily, fontSize: 18, color: colors.accent, marginRight: 8 }}>
+          <Text
+            style={{
+              fontFamily,
+              fontSize: 18,
+              color: colors.accent,
+              marginRight: 8,
+            }}
+          >
             {arabicData.name}
           </Text>
         ),
       });
     }
-  }, [arabicData, navigation, colors.accent]);
+  }, [arabicData, fontFamily, colors.accent]);
 
   useEffect(() => {
     if (arabicData && scrollToAyah) {
@@ -114,34 +143,115 @@ export default function SurahScreen() {
       );
       if (index !== -1) {
         setTimeout(() => {
-          flatRef.current?.scrollToIndex({ index, animated: true, viewPosition: 0.1 });
+          flatRef.current?.scrollToIndex({
+            index,
+            animated: true,
+            viewPosition: 0.1,
+          });
         }, 500);
       }
     }
   }, [arabicData, scrollToAyah]);
 
-  const ayahs: AyahData[] = (arabicData?.ayahs ?? []).map((ayah, i) => ({
-    number: ayah.number,
-    numberInSurah: ayah.numberInSurah,
-    text: ayah.text,
-    translation: translationData?.ayahs[i]?.text,
-    tafseer: tafseerData?.ayahs[i]?.text,
-    surahNumber: surahId,
-    surahName: arabicData?.name ?? "",
-    surahEnglishName: arabicData?.englishName ?? "",
-  }));
+  const ayahs: AyahData[] = useMemo(
+    () =>
+      (arabicData?.ayahs ?? []).map((ayah, i) => ({
+        number: ayah.number,
+        numberInSurah: ayah.numberInSurah,
+        text: ayah.text,
+        translation: translationData?.ayahs[i]?.text,
+        surahNumber: surahId,
+        surahName: arabicData?.name ?? "",
+        surahEnglishName: arabicData?.englishName ?? "",
+      })),
+    [arabicData, translationData, surahId]
+  );
+
+  const loadTafseer = useCallback(
+    async (ayahNum: number) => {
+      if (
+        tafseerCache.has(ayahNum) ||
+        loadingTafseers.has(ayahNum)
+      )
+        return;
+      setLoadingTafseers((prev) => new Set([...prev, ayahNum]));
+      try {
+        const text = await fetchAyahTafseer(
+          surahId,
+          ayahNum,
+          settings.tafseerSource
+        );
+        setTafseerCache((prev) => new Map([...prev, [ayahNum, text || null]]));
+      } catch {
+        setTafseerCache((prev) => new Map([...prev, [ayahNum, null]]));
+      } finally {
+        setLoadingTafseers((prev) => {
+          const n = new Set(prev);
+          n.delete(ayahNum);
+          return n;
+        });
+      }
+    },
+    [surahId, settings.tafseerSource, tafseerCache, loadingTafseers]
+  );
+
+  const toggleTafseer = useCallback(
+    (ayahNum: number) => {
+      setExpandedTafseers((prev) => {
+        const next = new Set(prev);
+        if (next.has(ayahNum)) {
+          next.delete(ayahNum);
+        } else {
+          next.add(ayahNum);
+          loadTafseer(ayahNum);
+        }
+        return next;
+      });
+    },
+    [loadTafseer]
+  );
+
+  const handleTap = useCallback((ayah: AyahData) => {
+    Haptics.selectionAsync();
+    setActionAyah(ayah);
+  }, []);
+
+  const handleShare = useCallback(
+    async (ayah: AyahData) => {
+      const arabic = settings.showTajweed
+        ? stripTajweedTags(ayah.text)
+        : ayah.text;
+      const lines = [arabic];
+      if (ayah.translation)
+        lines.push(`\n"${ayah.translation}"`);
+      lines.push(
+        `\n— ${ayah.surahEnglishName} (${ayah.surahName}), Ayah ${ayah.numberInSurah}`
+      );
+      setActionAyah(null);
+      await Share.share({ message: lines.join("") });
+    },
+    [settings.showTajweed]
+  );
+
+  const handleCopy = useCallback(
+    async (ayah: AyahData) => {
+      const arabic = settings.showTajweed
+        ? stripTajweedTags(ayah.text)
+        : ayah.text;
+      const text = [
+        arabic,
+        ayah.translation ? `\n"${ayah.translation}"` : "",
+        `\n— ${ayah.surahEnglishName}, Ayah ${ayah.numberInSurah}`,
+      ].join("");
+      await Clipboard.setStringAsync(text);
+      setActionAyah(null);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      Alert.alert("Copied", "Ayah copied to clipboard");
+    },
+    [settings.showTajweed]
+  );
 
   const showBismillah = surahId !== 1 && surahId !== 9;
-  const fontFamily = getArabicFontFamily(settings.fontType);
-
-  const handleLongPress = (ayah: AyahData) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    setActionAyah(ayah);
-  };
-
-  const [expandedTafseers, setExpandedTafseers] = useState<Set<number>>(
-    new Set()
-  );
 
   if (arabicLoading) {
     return (
@@ -156,215 +266,299 @@ export default function SurahScreen() {
     );
   }
 
+  const surahHeader = arabicData ? (
+    <View
+      style={[styles.surahInfoCard, { backgroundColor: colors.primary }]}
+    >
+      <Text
+        style={[styles.surahInfoArabic, { color: colors.primaryForeground, fontFamily }]}
+      >
+        {arabicData.name}
+      </Text>
+      <Text
+        style={[styles.surahInfoEnglish, { color: colors.primaryForeground }]}
+      >
+        {arabicData.englishName}
+      </Text>
+      <Text
+        style={[
+          styles.surahInfoTranslation,
+          { color: colors.primaryForeground, opacity: 0.8 },
+        ]}
+      >
+        {arabicData.englishNameTranslation}
+      </Text>
+      <Text
+        style={[
+          styles.surahMetaText,
+          { color: colors.primaryForeground, opacity: 0.65 },
+        ]}
+      >
+        {arabicData.numberOfAyahs} verses · {arabicData.revelationType}
+      </Text>
+    </View>
+  ) : null;
+
+  const bismillahBlock = showBismillah ? (
+    <View
+      style={[
+        styles.bismillahCard,
+        { backgroundColor: colors.card, borderColor: colors.border },
+      ]}
+    >
+      <Text
+        style={[
+          styles.bismillahText,
+          {
+            color: colors.foreground,
+            fontFamily,
+            fontSize: settings.arabicFontSize,
+            lineHeight: settings.arabicFontSize * 2,
+          },
+        ]}
+      >
+        {BISMILLAH}
+      </Text>
+    </View>
+  ) : null;
+
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <FlatList
-        ref={flatRef}
-        data={ayahs}
-        keyExtractor={(a) => a.numberInSurah.toString()}
-        contentInsetAdjustmentBehavior="automatic"
-        ListHeaderComponent={
-          <View style={styles.listHeader}>
-            {showBismillah && (
-              <View
-                style={[
-                  styles.bismillahCard,
+      {settings.continuousMode ? (
+        <ScrollView
+          contentContainerStyle={{
+            paddingBottom: Platform.OS === "web" ? 84 + 34 : 100,
+          }}
+          showsVerticalScrollIndicator={false}
+        >
+          {surahHeader}
+          {bismillahBlock}
+          <View
+            style={[
+              styles.continuousCard,
+              { backgroundColor: colors.card, borderColor: colors.border },
+            ]}
+          >
+            <Text
+              style={{
+                fontFamily,
+                fontSize: settings.arabicFontSize,
+                lineHeight: settings.arabicFontSize * 2.2,
+                color: colors.foreground,
+                textAlign: "right",
+                writingDirection: "rtl",
+              }}
+            >
+              {ayahs.map((ayah) => (
+                <React.Fragment key={ayah.numberInSurah}>
+                  <Text>{settings.showTajweed ? stripTajweedTags(ayah.text) : ayah.text}</Text>
+                  <Text
+                    style={{ color: colors.accent, fontSize: settings.arabicFontSize * 0.72 }}
+                  >
+                    {" "}﴿{ayah.numberInSurah}﴾{" "}
+                  </Text>
+                </React.Fragment>
+              ))}
+            </Text>
+          </View>
+
+          {settings.showTranslation && translationData && (
+            <View
+              style={[
+                styles.continuousTranslation,
+                { backgroundColor: colors.card, borderColor: colors.border },
+              ]}
+            >
+              <Text
+                style={[styles.continuousTranslationTitle, { color: colors.mutedForeground }]}
+              >
+                Translation
+              </Text>
+              {ayahs.map((ayah) => (
+                <Text
+                  key={ayah.numberInSurah}
+                  style={[
+                    styles.continuousTranslationText,
+                    {
+                      color: colors.foreground,
+                      fontSize: settings.translationFontSize,
+                      lineHeight: settings.translationFontSize * 1.8,
+                    },
+                  ]}
+                >
+                  <Text style={{ color: colors.accent, fontFamily: "Inter_600SemiBold" }}>
+                    {ayah.numberInSurah}.{" "}
+                  </Text>
+                  {ayah.translation ?? ""}
+                </Text>
+              ))}
+            </View>
+          )}
+        </ScrollView>
+      ) : (
+        <FlatList
+          ref={flatRef}
+          data={ayahs}
+          keyExtractor={(a) => a.numberInSurah.toString()}
+          contentInsetAdjustmentBehavior="automatic"
+          windowSize={5}
+          maxToRenderPerBatch={8}
+          initialNumToRender={6}
+          removeClippedSubviews={Platform.OS !== "web"}
+          ListHeaderComponent={
+            <View style={styles.listHeader}>
+              {surahHeader}
+              {bismillahBlock}
+            </View>
+          }
+          renderItem={({ item: ayah }) => {
+            const bookmarked = isBookmarked(ayah.surahNumber, ayah.numberInSurah);
+            const tafseerExpanded = expandedTafseers.has(ayah.numberInSurah);
+            const tafseerText = tafseerCache.get(ayah.numberInSurah) ?? null;
+            const tafseerLoading = loadingTafseers.has(ayah.numberInSurah);
+
+            return (
+              <Pressable
+                onPress={() => handleTap(ayah)}
+                style={({ pressed }) => [
+                  styles.ayahCard,
                   {
-                    backgroundColor: colors.card,
+                    backgroundColor: pressed ? colors.secondary : colors.card,
                     borderColor: colors.border,
                   },
                 ]}
               >
-                <Text
-                  style={[
-                    styles.bismillahText,
-                    {
-                      color: colors.foreground,
-                      fontFamily,
-                      fontSize: settings.arabicFontSize,
-                    },
-                  ]}
-                >
-                  {BISMILLAH}
-                </Text>
-              </View>
-            )}
-            {arabicData && (
-              <View
-                style={[
-                  styles.surahInfoCard,
-                  {
-                    backgroundColor: colors.primary,
-                  },
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.surahInfoEnglish,
-                    { color: colors.primaryForeground },
-                  ]}
-                >
-                  {arabicData.englishName}
-                </Text>
-                <Text
-                  style={[
-                    styles.surahInfoTranslation,
-                    { color: colors.primaryForeground, opacity: 0.8 },
-                  ]}
-                >
-                  {arabicData.englishNameTranslation}
-                </Text>
-                <View style={styles.surahMeta}>
-                  <Text
-                    style={[
-                      styles.surahMetaText,
-                      { color: colors.primaryForeground, opacity: 0.7 },
-                    ]}
+                <View style={styles.ayahHeader}>
+                  <View
+                    style={[styles.ayahBadge, { borderColor: colors.accent }]}
                   >
-                    {arabicData.numberOfAyahs} verses · {arabicData.revelationType}
-                  </Text>
+                    <Text
+                      style={[styles.ayahNumber, { color: colors.accent }]}
+                    >
+                      {ayah.numberInSurah}
+                    </Text>
+                  </View>
+                  <View style={styles.ayahHeaderRight}>
+                    {bookmarked && (
+                      <Ionicons
+                        name="bookmark"
+                        size={16}
+                        color={colors.accent}
+                      />
+                    )}
+                  </View>
                 </View>
-              </View>
-            )}
-          </View>
-        }
-        renderItem={({ item: ayah }) => {
-          const bookmarked = isBookmarked(ayah.surahNumber, ayah.numberInSurah);
-          const tafseerExpanded = expandedTafseers.has(ayah.numberInSurah);
 
-          return (
-            <Pressable
-              onLongPress={() => handleLongPress(ayah)}
-              style={({ pressed }) => [
-                styles.ayahCard,
-                {
-                  backgroundColor: pressed
-                    ? colors.secondary
-                    : colors.card,
-                  borderColor: colors.border,
-                },
-              ]}
-            >
-              <View style={styles.ayahHeader}>
-                <View
-                  style={[
-                    styles.ayahBadge,
-                    { borderColor: colors.accent },
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.ayahNumber,
-                      { color: colors.accent },
-                    ]}
-                  >
-                    {ayah.numberInSurah}
-                  </Text>
-                </View>
-                {bookmarked && (
-                  <Ionicons
-                    name="bookmark"
-                    size={16}
-                    color={colors.accent}
+                {settings.showTajweed ? (
+                  <TajweedText
+                    text={ayah.text}
+                    fontSize={settings.arabicFontSize}
+                    fontFamily={fontFamily}
+                    color={colors.foreground}
                   />
-                )}
-              </View>
-
-              {settings.showTajweed ? (
-                <TajweedText
-                  text={ayah.text}
-                  fontSize={settings.arabicFontSize}
-                  fontFamily={fontFamily}
-                  color={colors.foreground}
-                />
-              ) : (
-                <Text
-                  style={[
-                    styles.arabicText,
-                    {
-                      color: colors.foreground,
-                      fontSize: settings.arabicFontSize,
-                      fontFamily,
-                      lineHeight: settings.arabicFontSize * 1.9,
-                    },
-                  ]}
-                >
-                  {ayah.text}
-                </Text>
-              )}
-
-              {settings.showTranslation && ayah.translation ? (
-                <Text
-                  style={[
-                    styles.translation,
-                    {
-                      color: colors.mutedForeground,
-                      fontSize: settings.translationFontSize,
-                    },
-                  ]}
-                >
-                  {ayah.translation}
-                </Text>
-              ) : null}
-
-              {settings.showTafseer && ayah.tafseer ? (
-                <View>
-                  <TouchableOpacity
-                    style={styles.tafseerToggle}
-                    onPress={() =>
-                      setExpandedTafseers((prev) => {
-                        const next = new Set(prev);
-                        if (next.has(ayah.numberInSurah)) {
-                          next.delete(ayah.numberInSurah);
-                        } else {
-                          next.add(ayah.numberInSurah);
-                        }
-                        return next;
-                      })
-                    }
+                ) : (
+                  <Text
+                    style={[
+                      styles.arabicText,
+                      {
+                        color: colors.foreground,
+                        fontSize: settings.arabicFontSize,
+                        fontFamily,
+                        lineHeight: settings.arabicFontSize * 2,
+                      },
+                    ]}
                   >
-                    <Text
-                      style={[styles.tafseerLabel, { color: colors.primary }]}
+                    {ayah.text}
+                  </Text>
+                )}
+
+                {settings.showTranslation && ayah.translation ? (
+                  <Text
+                    style={[
+                      styles.translation,
+                      {
+                        color: colors.mutedForeground,
+                        fontSize: settings.translationFontSize,
+                        lineHeight: settings.translationFontSize * 1.7,
+                      },
+                    ]}
+                  >
+                    {ayah.translation}
+                  </Text>
+                ) : null}
+
+                {settings.showTafseer && (
+                  <View>
+                    <TouchableOpacity
+                      style={styles.tafseerToggle}
+                      onPress={() => toggleTafseer(ayah.numberInSurah)}
                     >
-                      Tafseer
-                    </Text>
-                    <Ionicons
-                      name={tafseerExpanded ? "chevron-up" : "chevron-down"}
-                      size={14}
-                      color={colors.primary}
-                    />
-                  </TouchableOpacity>
-                  {tafseerExpanded && (
-                    <Text
-                      style={[
-                        styles.tafseerText,
-                        {
-                          color: colors.mutedForeground,
-                          fontSize: settings.tafseerFontSize,
-                          borderLeftColor: colors.primary,
-                        },
-                      ]}
-                    >
-                      {ayah.tafseer}
-                    </Text>
-                  )}
-                </View>
-              ) : null}
-            </Pressable>
-          );
-        }}
-        contentContainerStyle={{
-          paddingBottom: Platform.OS === "web" ? 84 + 34 : 100,
-        }}
-        onScrollToIndexFailed={() => {}}
-        showsVerticalScrollIndicator={false}
-      />
+                      <Text
+                        style={[styles.tafseerLabel, { color: colors.primary }]}
+                      >
+                        Tafseer
+                      </Text>
+                      <Ionicons
+                        name={tafseerExpanded ? "chevron-up" : "chevron-down"}
+                        size={14}
+                        color={colors.primary}
+                      />
+                    </TouchableOpacity>
+                    {tafseerExpanded && (
+                      <View
+                        style={[
+                          styles.tafseerBlock,
+                          { borderLeftColor: colors.primary },
+                        ]}
+                      >
+                        {tafseerLoading ? (
+                          <ActivityIndicator
+                            size="small"
+                            color={colors.primary}
+                          />
+                        ) : tafseerText ? (
+                          <Text
+                            style={[
+                              styles.tafseerText,
+                              {
+                                color: colors.mutedForeground,
+                                fontSize: settings.tafseerFontSize,
+                                lineHeight: settings.tafseerFontSize * 1.75,
+                              },
+                            ]}
+                          >
+                            {tafseerText}
+                          </Text>
+                        ) : (
+                          <Text
+                            style={[
+                              styles.tafseerText,
+                              { color: colors.mutedForeground },
+                            ]}
+                          >
+                            Tafseer not available for this ayah.
+                          </Text>
+                        )}
+                      </View>
+                    )}
+                  </View>
+                )}
+              </Pressable>
+            );
+          }}
+          contentContainerStyle={{
+            paddingBottom: Platform.OS === "web" ? 84 + 34 : 100,
+          }}
+          onScrollToIndexFailed={() => {}}
+          showsVerticalScrollIndicator={false}
+        />
+      )}
 
       {actionAyah && (
         <Modal
           visible
           transparent
-          animationType="fade"
+          animationType="slide"
           onRequestClose={() => setActionAyah(null)}
         >
           <Pressable
@@ -380,15 +574,42 @@ export default function SurahScreen() {
                 },
               ]}
             >
+              <View
+                style={[styles.sheetHandle, { backgroundColor: colors.border }]}
+              />
               <Text
-                style={[
-                  styles.actionTitle,
-                  { color: colors.mutedForeground },
-                ]}
+                style={[styles.actionTitle, { color: colors.mutedForeground }]}
               >
-                {actionAyah.surahEnglishName} · Ayah{" "}
-                {actionAyah.numberInSurah}
+                {actionAyah.surahEnglishName} · Ayah {actionAyah.numberInSurah}
               </Text>
+
+              <TouchableOpacity
+                style={styles.actionItem}
+                onPress={() => handleShare(actionAyah)}
+              >
+                <Ionicons
+                  name="share-social-outline"
+                  size={22}
+                  color={colors.primary}
+                />
+                <Text style={[styles.actionText, { color: colors.foreground }]}>
+                  Share Ayah
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.actionItem}
+                onPress={() => handleCopy(actionAyah)}
+              >
+                <Ionicons
+                  name="copy-outline"
+                  size={22}
+                  color={colors.primary}
+                />
+                <Text style={[styles.actionText, { color: colors.foreground }]}>
+                  Copy Ayah
+                </Text>
+              </TouchableOpacity>
 
               {(() => {
                 const bookmarked = isBookmarked(
@@ -423,7 +644,7 @@ export default function SurahScreen() {
                     <Ionicons
                       name={bookmarked ? "bookmark" : "bookmark-outline"}
                       size={22}
-                      color={bookmarked ? colors.accent : colors.foreground}
+                      color={bookmarked ? colors.accent : colors.primary}
                     />
                     <Text
                       style={[
@@ -459,27 +680,19 @@ export default function SurahScreen() {
                 <Ionicons
                   name="book-outline"
                   size={22}
-                  color={colors.foreground}
+                  color={colors.primary}
                 />
-                <Text
-                  style={[styles.actionText, { color: colors.foreground }]}
-                >
+                <Text style={[styles.actionText, { color: colors.foreground }]}>
                   Mark as Last Read
                 </Text>
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={[
-                  styles.cancelBtn,
-                  { borderTopColor: colors.border },
-                ]}
+                style={[styles.cancelBtn, { borderTopColor: colors.border }]}
                 onPress={() => setActionAyah(null)}
               >
                 <Text
-                  style={[
-                    styles.cancelText,
-                    { color: colors.mutedForeground },
-                  ]}
+                  style={[styles.cancelText, { color: colors.mutedForeground }]}
                 >
                   Cancel
                 </Text>
@@ -493,59 +706,37 @@ export default function SurahScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  center: {
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  listHeader: {
-    gap: 12,
-    marginBottom: 8,
-  },
-  bismillahCard: {
-    marginHorizontal: 16,
-    marginTop: 16,
-    borderRadius: 14,
-    borderWidth: 1,
-    padding: 20,
-    alignItems: "center",
-  },
-  bismillahText: {
-    textAlign: "center",
-    writingDirection: "rtl",
-    lineHeight: 54,
-  },
+  container: { flex: 1 },
+  center: { alignItems: "center", justifyContent: "center" },
+  listHeader: { gap: 0, marginBottom: 8 },
   surahInfoCard: {
     marginHorizontal: 16,
+    marginTop: 16,
     borderRadius: 16,
     padding: 20,
     alignItems: "center",
     gap: 4,
   },
-  surahInfoEnglish: {
-    fontSize: 22,
-    fontFamily: "Inter_700Bold",
+  surahInfoArabic: { fontSize: 22, marginBottom: 4 },
+  surahInfoEnglish: { fontSize: 20, fontFamily: "Inter_700Bold" },
+  surahInfoTranslation: { fontSize: 13, fontFamily: "Inter_400Regular" },
+  surahMetaText: { fontSize: 12, fontFamily: "Inter_400Regular", marginTop: 4 },
+  bismillahCard: {
+    marginHorizontal: 16,
+    marginTop: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 20,
+    alignItems: "center",
   },
-  surahInfoTranslation: {
-    fontSize: 14,
-    fontFamily: "Inter_400Regular",
-  },
-  surahMeta: {
-    marginTop: 4,
-  },
-  surahMetaText: {
-    fontSize: 12,
-    fontFamily: "Inter_400Regular",
-  },
+  bismillahText: { textAlign: "center", writingDirection: "rtl" },
   ayahCard: {
     marginHorizontal: 16,
-    marginVertical: 6,
+    marginVertical: 5,
     borderRadius: 14,
     borderWidth: 1,
     padding: 16,
-    gap: 12,
+    gap: 10,
   },
   ayahHeader: {
     flexDirection: "row",
@@ -560,47 +751,64 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  ayahNumber: {
-    fontSize: 13,
-    fontFamily: "Inter_600SemiBold",
-  },
-  arabicText: {
-    textAlign: "right",
-    writingDirection: "rtl",
-  },
-  translation: {
-    fontFamily: "Inter_400Regular",
-    lineHeight: 22,
-  },
+  ayahNumber: { fontSize: 13, fontFamily: "Inter_600SemiBold" },
+  ayahHeaderRight: { flexDirection: "row", alignItems: "center", gap: 8 },
+  arabicText: { textAlign: "right", writingDirection: "rtl" },
+  translation: { fontFamily: "Inter_400Regular" },
   tafseerToggle: {
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
     paddingVertical: 4,
   },
-  tafseerLabel: {
-    fontSize: 12,
-    fontFamily: "Inter_600SemiBold",
-  },
-  tafseerText: {
-    fontFamily: "Inter_400Regular",
-    lineHeight: 20,
+  tafseerLabel: { fontSize: 12, fontFamily: "Inter_600SemiBold" },
+  tafseerBlock: {
     paddingLeft: 12,
     borderLeftWidth: 2,
     marginTop: 4,
   },
+  tafseerText: { fontFamily: "Inter_400Regular" },
+  continuousCard: {
+    margin: 16,
+    marginTop: 12,
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 20,
+  },
+  continuousTranslation: {
+    margin: 16,
+    marginTop: 0,
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 20,
+    gap: 10,
+  },
+  continuousTranslationTitle: {
+    fontSize: 11,
+    fontFamily: "Inter_600SemiBold",
+    letterSpacing: 1,
+    textTransform: "uppercase",
+    marginBottom: 4,
+  },
+  continuousTranslationText: { fontFamily: "Inter_400Regular" },
   modalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.5)",
+    backgroundColor: "rgba(0,0,0,0.4)",
     justifyContent: "flex-end",
   },
   actionSheet: {
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
     borderWidth: 1,
     padding: 20,
     paddingBottom: 36,
-    gap: 4,
+  },
+  sheetHandle: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    alignSelf: "center",
+    marginBottom: 12,
   },
   actionTitle: {
     fontSize: 12,
@@ -611,22 +819,16 @@ const styles = StyleSheet.create({
   actionItem: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
+    gap: 14,
     paddingVertical: 14,
-    paddingHorizontal: 8,
+    paddingHorizontal: 4,
   },
-  actionText: {
-    fontSize: 16,
-    fontFamily: "Inter_500Medium",
-  },
+  actionText: { fontSize: 16, fontFamily: "Inter_500Medium" },
   cancelBtn: {
     borderTopWidth: 1,
     marginTop: 8,
     paddingTop: 14,
     alignItems: "center",
   },
-  cancelText: {
-    fontSize: 16,
-    fontFamily: "Inter_400Regular",
-  },
+  cancelText: { fontSize: 16, fontFamily: "Inter_400Regular" },
 });

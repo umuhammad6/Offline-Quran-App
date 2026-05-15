@@ -1,0 +1,15 @@
+So a few issues:
+
+There's no option to switch fonts in settings
+When I turn the tajweed colour option on ( nevermind that i can't click on tajweed option and it takes me to turn off each rule like example ghunna, ikhfaa) it doesn't even have description of the what it is and it doesn't work because when I turn it on the Quran text just breaks and has like "[h]" in all the Arabic letters that should have tajweed, it should just change colour depending on what tajweed rule it is, you can copy the colour from standard colour coded tajweed quran
+Also the UI is simple but I want the colour theme to be white with only light accents in the premium green colour
+The search option works for exact word but I want the background of word to be highlited a little different not just the word to be bold and also the search doesn't work for fuzzy search only exact match
+The title should be "The Holy Quran" in English on left and Arabic cleanly on right side
+For ayah of the day a person should be able to save it as an image, either with white background and black text or they can choose the background of the image from their photos 
+Also the app needs to be fast and smooth, no stuttering or lag
+When you click on an ayah(not holding it for period of time), it should have the list to share ayah(sharing should also have a link to app after the Arabic in ayah and translation), copy the verse, bookmark it or to mark it as last read
+Also in the ayah I noticed when I click tafseer it just shows the ayah in Arabic but has no English translation and definitely isn't tafseer in kathir or even tafsir sa'di (fix this so it shows tafseer(explanation) and shows tafsir sa'di and gives options in settings to change also (if the problem with tafseer is everywhere fix it also)
+Fix the Arabic font options if they are wrong : [There are two main styles of Arabic scripts used in the Quran today. Both are widely circulated and known by various names. Firstly, we have the Uthmani or Madani script and the second is known as IndoPak or Farsi (Persian) script. Both employ the Uthmani script standards but differ slightly in the convention of the diacritical marks. You can research exactly what it is and find examples online ]
+There should also be an option to change it so it's not separated ayah by ayah and it's like a proper Qur'an page 
+Should also be option in settings to switch to dark theme or light theme(which will be the normal one mentioned earlier white with the green accents)
+(Do all of these, it's not too hard for you, you can do it step by step, don't ask me if i want to do one after since it's a lot or whatnot)
