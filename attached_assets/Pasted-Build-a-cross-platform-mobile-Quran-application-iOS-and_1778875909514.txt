@@ -1,0 +1,123 @@
+Build a cross-platform mobile Quran application (iOS and Android) using a modern framework such as React Native (Expo preferred) or Flutter.
+The app must be production-quality, bug-free, and designed with a clean, intuitive UI/UX.
+🧩 Core Features
+📖 Quran Reader
+Full, accurate Quran text (verified authentic source required)
+Arabic script must support:
+Uthmani font
+Indo-Pak font
+Switchable in Settings
+Display:
+Surah name
+Ayah numbers
+Smooth scrolling and fast performance
+🎨 Tajweed Features
+Optional Tajweed color-coded text
+Toggle ON/OFF in settings
+Colors must follow standard Tajweed rules
+🔠 Text & Display Settings
+Adjustable:
+Arabic font size
+Translation font size
+Tafseer font size
+Font switching:
+Uthmani ↔ Indo-Pak
+Clean spacing and readability
+🌍 Translations & Tafseer
+Default translation:
+Saheeh International
+Ability to switch translations (multi-language support)
+Tafseer support:
+At least one included (e.g. Ibn Kathir or similar)
+Toggle tafseer visibility
+Tafseer displayed neatly below ayah or in expandable section
+🔍 Search Functionality
+Advanced search system:
+Search by English words or full sentences
+Returns all matching ayat based on translation
+Features:
+Highlight searched words in results
+Option:
+Exact match
+Similar match (fuzzy search)
+Fast and efficient indexing
+🔖 Bookmarking & Progress
+Tap any ayah to:
+Bookmark it
+Mark as “Last Read”
+Easy access:
+“Continue Reading” section
+Bookmark list
+🕌 Prayer Times Tab
+Dedicated tab showing:
+Daily prayer times based on location
+Auto-detect location OR manual input
+Clean, minimal display
+🌟 Ayah of the Day
+Separate tab:
+Displays 1 randomly selected ayah per day
+Includes:
+Arabic
+Translation
+Tafseer
+Beautiful, centered layout
+Changes automatically every day (cached per day)
+🎯 UI/UX Requirements
+Minimalist, clean Islamic design
+Smooth navigation with bottom tabs:
+Quran
+Search
+Ayah of the Day
+Prayer Times
+Settings
+No clutter, easy readability
+Dark mode support (optional but preferred)
+⚙️ Settings Page
+Include:
+Font type (Uthmani / Indo-Pak)
+Font sizes (Arabic, translation, tafseer)
+Toggle Tajweed colors
+Translation selection
+Tafseer selection
+🧱 Technical Requirements
+Architecture
+Modular, scalable codebase
+Proper state management (Redux / Zustand / Provider / Riverpod)
+Offline-first (Quran data stored locally)
+Data Sources
+Use authentic, verified Quran datasets
+Ensure:
+100% text accuracy
+No missing or incorrect ayat
+Translations and tafseer must be reliable sources
+Performance
+Fast loading
+Smooth scrolling
+Optimized search indexing
+Reliability
+No crashes
+No UI glitches
+Proper error handling everywhere
+Testing
+Include:
+Basic unit tests
+Edge case handling
+Ensure no bugs before completion
+📦 Deliverables
+Fully working mobile app
+Clean, readable code
+Instructions to run locally
+Ready for deployment (App Store / Play Store)
+🚨 Critical Requirements
+Quran text must be 100% accurate
+No placeholder data
+No broken features
+No UI inconsistencies
+All features must be fully functional
+🧠 Optional Enhancements (If Time Allows)
+Audio recitation per ayah
+Download reciters
+Night mode
+Favorites collection
+Widget for “Ayah of the Day”
+If you want, I can upgrade this prompt further (e.g., add API choices, database schema, or even generate the actual starter code).
