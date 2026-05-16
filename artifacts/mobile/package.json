@@ -60,6 +60,8 @@
     "@expo-google-fonts/noto-naskh-arabic": "^0.4.5",
     "expo-clipboard": "^8.0.8",
     "expo-media-library": "^18.2.1",
+    "expo-notifications": "^0.32.17",
+    "expo-sensors": "^15.0.8",
     "expo-sharing": "^14.0.8",
     "react-native-view-shot": "^4.0.3"
   }

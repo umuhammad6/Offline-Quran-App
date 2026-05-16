@@ -22,8 +22,15 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { QuranProvider } from "@/context/QuranContext";
 import { BookmarkProvider } from "@/context/BookmarkContext";
+import { TajweedProvider } from "@/context/TajweedContext";
+import {
+  setupNotificationHandler,
+  setupAndroidChannels,
+} from "@/utils/notifications";
 
 SplashScreen.preventAutoHideAsync();
+
+setupNotificationHandler();
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -39,6 +46,13 @@ function RootLayoutNav() {
     <Stack screenOptions={{ headerBackTitle: "Back" }}>
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen name="surah" options={{ headerShown: false }} />
+      <Stack.Screen
+        name="tajweed-rules"
+        options={{
+          headerShown: true,
+          presentation: "card",
+        }}
+      />
     </Stack>
   );
 }
@@ -66,6 +80,7 @@ export default function RootLayout() {
   useEffect(() => {
     if (fontsLoaded || fontError) {
       SplashScreen.hideAsync();
+      setupAndroidChannels();
     }
   }, [fontsLoaded, fontError]);
 
@@ -77,11 +92,13 @@ export default function RootLayout() {
         <QueryClientProvider client={queryClient}>
           <QuranProvider>
             <BookmarkProvider>
-              <GestureHandlerRootView>
-                <KeyboardProvider>
-                  <RootLayoutNav />
-                </KeyboardProvider>
-              </GestureHandlerRootView>
+              <TajweedProvider>
+                <GestureHandlerRootView>
+                  <KeyboardProvider>
+                    <RootLayoutNav />
+                  </KeyboardProvider>
+                </GestureHandlerRootView>
+              </TajweedProvider>
             </BookmarkProvider>
           </QuranProvider>
         </QueryClientProvider>

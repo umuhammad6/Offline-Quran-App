@@ -30,6 +30,14 @@ function NativeTabLayout() {
         <Icon sf={{ default: "moon", selected: "moon.fill" }} />
         <Label>Prayer</Label>
       </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="qiblah">
+        <Icon sf={{ default: "location", selected: "location.fill" }} />
+        <Label>Qiblah</Label>
+      </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="bookmarks">
+        <Icon sf={{ default: "bookmark", selected: "bookmark.fill" }} />
+        <Label>Saved</Label>
+      </NativeTabs.Trigger>
       <NativeTabs.Trigger name="settings">
         <Icon sf={{ default: "gearshape", selected: "gearshape.fill" }} />
         <Label>Settings</Label>
@@ -76,6 +84,7 @@ function ClassicTabLayout() {
               ]}
             />
           ) : null,
+        tabBarLabelStyle: { fontSize: 10 },
       }}
     >
       <Tabs.Screen
@@ -84,7 +93,7 @@ function ClassicTabLayout() {
           title: "Quran",
           tabBarIcon: ({ color }) =>
             isIOS ? (
-              <SymbolView name="book.fill" tintColor={color} size={24} />
+              <SymbolView name="book.fill" tintColor={color} size={22} />
             ) : (
               <Ionicons name="book-outline" size={22} color={color} />
             ),
@@ -96,9 +105,9 @@ function ClassicTabLayout() {
           title: "Search",
           tabBarIcon: ({ color }) =>
             isIOS ? (
-              <SymbolView name="magnifyingglass" tintColor={color} size={24} />
+              <SymbolView name="magnifyingglass" tintColor={color} size={22} />
             ) : (
-              <Feather name="search" size={22} color={color} />
+              <Feather name="search" size={20} color={color} />
             ),
         }}
       />
@@ -108,7 +117,7 @@ function ClassicTabLayout() {
           title: "Ayah",
           tabBarIcon: ({ color }) =>
             isIOS ? (
-              <SymbolView name="star.fill" tintColor={color} size={24} />
+              <SymbolView name="star.fill" tintColor={color} size={22} />
             ) : (
               <Ionicons name="star-outline" size={22} color={color} />
             ),
@@ -120,9 +129,33 @@ function ClassicTabLayout() {
           title: "Prayer",
           tabBarIcon: ({ color }) =>
             isIOS ? (
-              <SymbolView name="moon.fill" tintColor={color} size={24} />
+              <SymbolView name="moon.fill" tintColor={color} size={22} />
             ) : (
               <Ionicons name="moon-outline" size={22} color={color} />
+            ),
+        }}
+      />
+      <Tabs.Screen
+        name="qiblah"
+        options={{
+          title: "Qiblah",
+          tabBarIcon: ({ color }) =>
+            isIOS ? (
+              <SymbolView name="location.fill" tintColor={color} size={22} />
+            ) : (
+              <Ionicons name="compass-outline" size={22} color={color} />
+            ),
+        }}
+      />
+      <Tabs.Screen
+        name="bookmarks"
+        options={{
+          title: "Saved",
+          tabBarIcon: ({ color }) =>
+            isIOS ? (
+              <SymbolView name="bookmark.fill" tintColor={color} size={22} />
+            ) : (
+              <Ionicons name="bookmark-outline" size={22} color={color} />
             ),
         }}
       />
@@ -132,7 +165,7 @@ function ClassicTabLayout() {
           title: "Settings",
           tabBarIcon: ({ color }) =>
             isIOS ? (
-              <SymbolView name="gearshape.fill" tintColor={color} size={24} />
+              <SymbolView name="gearshape.fill" tintColor={color} size={22} />
             ) : (
               <Ionicons name="settings-outline" size={22} color={color} />
             ),

@@ -1,17 +1,31 @@
 import { Ionicons } from "@expo/vector-icons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Location from "expo-location";
 import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
+  Modal,
   Platform,
+  Pressable,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
+import {
+  requestNotificationPermissions,
+  schedulePrayerNotifications,
+  cancelPrayerNotifications,
+} from "@/utils/notifications";
+
+const LOCATION_STORAGE_KEY = "prayer_location";
+const NOTIF_PREF_KEY = "prayer_notif_enabled";
 
 interface PrayerTimes {
   Fajr: string;
@@ -23,98 +37,263 @@ interface PrayerTimes {
   Midnight: string;
 }
 
+interface StoredLocation {
+  lat: number;
+  lng: number;
+  city: string;
+}
+
 interface PrayerInfo {
   name: string;
-  icon: string;
+  icon: keyof typeof Ionicons.glyphMap;
   time: string;
   key: keyof PrayerTimes;
 }
 
 function getNextPrayer(times: PrayerTimes): string {
   const now = new Date();
-  const currentMinutes = now.getHours() * 60 + now.getMinutes();
-  const prayers: [string, keyof PrayerTimes][] = [
-    ["Fajr", "Fajr"],
-    ["Sunrise", "Sunrise"],
-    ["Dhuhr", "Dhuhr"],
-    ["Asr", "Asr"],
-    ["Maghrib", "Maghrib"],
-    ["Isha", "Isha"],
+  const currentMins = now.getHours() * 60 + now.getMinutes();
+  const prayers: [keyof PrayerTimes][] = [
+    ["Fajr"],
+    ["Sunrise"],
+    ["Dhuhr"],
+    ["Asr"],
+    ["Maghrib"],
+    ["Isha"],
   ];
-  for (const [, key] of prayers) {
+  for (const [key] of prayers) {
     const [h, m] = times[key].split(":").map(Number);
-    const prayerMinutes = h * 60 + m;
-    if (prayerMinutes > currentMinutes) return key;
+    if (h * 60 + m > currentMins) return key;
   }
   return "Fajr";
 }
 
-async function fetchPrayerTimesNative(lat: number, lng: number): Promise<{ times: PrayerTimes; city: string }> {
+async function fetchPrayerTimesForCoords(
+  lat: number,
+  lng: number
+): Promise<PrayerTimes> {
   const timestamp = Math.floor(Date.now() / 1000);
   const res = await fetch(
-    `https://api.aladhan.com/v1/timings/${timestamp}?latitude=${lat}&longitude=${lng}&method=2`
+    `https://api.aladhan.com/v1/timings/${timestamp}?latitude=${lat}&longitude=${lng}&method=3`
   );
   const json = await res.json();
-  const times = json.data.timings as PrayerTimes;
-  const meta = json.data.meta;
-  const city = meta.timezone?.split("/").pop()?.replace(/_/g, " ") ?? "Your Location";
-  return { times, city };
+  return json.data.timings as PrayerTimes;
 }
 
-async function fetchPrayerTimesWeb(lat: number, lng: number): Promise<{ times: PrayerTimes; city: string }> {
-  return fetchPrayerTimesNative(lat, lng);
+async function geocodeCity(
+  query: string
+): Promise<{ lat: number; lng: number; city: string } | null> {
+  try {
+    const encoded = encodeURIComponent(query.trim());
+    const res = await fetch(
+      `https://nominatim.openstreetmap.org/search?q=${encoded}&format=json&limit=1`,
+      { headers: { "User-Agent": "QuranApp/1.0" } }
+    );
+    const json = await res.json();
+    if (!json.length) return null;
+    const result = json[0];
+    const city =
+      result.address?.city ||
+      result.address?.town ||
+      result.address?.village ||
+      result.display_name.split(",")[0].trim();
+    return {
+      lat: parseFloat(result.lat),
+      lng: parseFloat(result.lon),
+      city,
+    };
+  } catch {
+    return null;
+  }
 }
 
 export default function PrayerScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [prayerTimes, setPrayerTimes] = useState<PrayerTimes | null>(null);
   const [city, setCity] = useState<string>("");
   const [nextPrayer, setNextPrayer] = useState<string>("");
+  const [notifsEnabled, setNotifsEnabled] = useState(false);
+  const [showManualModal, setShowManualModal] = useState(false);
+  const [manualInput, setManualInput] = useState("");
+  const [manualLoading, setManualLoading] = useState(false);
 
-  const loadPrayerTimes = async () => {
+  const topPad = Platform.OS === "web" ? 67 : insets.top;
+  const bottomPad = Platform.OS === "web" ? 84 + 34 : 100;
+
+  useEffect(() => {
+    AsyncStorage.getItem(NOTIF_PREF_KEY).then((v) => {
+      setNotifsEnabled(v === "true");
+    });
+    loadFromStoredOrFresh();
+  }, []);
+
+  const loadFromStoredOrFresh = async () => {
+    try {
+      const stored = await AsyncStorage.getItem(LOCATION_STORAGE_KEY);
+      if (stored) {
+        const loc: StoredLocation = JSON.parse(stored);
+        await loadTimes(loc.lat, loc.lng, loc.city);
+        return;
+      }
+    } catch {}
+    await detectLocation();
+  };
+
+  const detectLocation = async () => {
     setLoading(true);
     setError(null);
     try {
-      let lat: number, lng: number;
+      let lat: number, lng: number, detectedCity: string;
 
       if (Platform.OS !== "web") {
         const { status } = await Location.requestForegroundPermissionsAsync();
         if (status !== "granted") {
-          setError("Location permission denied. Please enable location access.");
+          setError(
+            "Location permission denied. Please enable location access or enter a city manually."
+          );
           setLoading(false);
           return;
         }
-        const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        const loc = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+        });
         lat = loc.coords.latitude;
         lng = loc.coords.longitude;
-      } else {
-        const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
-          navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 10000 });
+
+        const addrs = await Location.reverseGeocodeAsync({
+          latitude: lat,
+          longitude: lng,
         });
+        const a = addrs[0];
+        detectedCity =
+          a?.city ||
+          a?.district ||
+          a?.subregion ||
+          a?.region ||
+          "Your Location";
+      } else {
+        const pos = await new Promise<GeolocationPosition>((res, rej) =>
+          navigator.geolocation.getCurrentPosition(res, rej, { timeout: 10000 })
+        );
         lat = pos.coords.latitude;
         lng = pos.coords.longitude;
+        detectedCity = "Your Location";
       }
 
-      const result = await fetchPrayerTimesNative(lat, lng);
-      setPrayerTimes(result.times);
-      setCity(result.city);
-      setNextPrayer(getNextPrayer(result.times));
-    } catch (e) {
-      setError("Could not retrieve prayer times. Please try again.");
+      await AsyncStorage.setItem(
+        LOCATION_STORAGE_KEY,
+        JSON.stringify({ lat, lng, city: detectedCity })
+      );
+      await loadTimes(lat, lng, detectedCity);
+    } catch {
+      setError("Could not detect location. Please enter your city manually.");
+      setLoading(false);
+    }
+  };
+
+  const loadTimes = async (lat: number, lng: number, cityName: string) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const times = await fetchPrayerTimesForCoords(lat, lng);
+      setPrayerTimes(times);
+      setCity(cityName);
+      setNextPrayer(getNextPrayer(times));
+
+      const notifOn = (await AsyncStorage.getItem(NOTIF_PREF_KEY)) === "true";
+      if (notifOn && Platform.OS !== "web") {
+        const prayerList = [
+          { name: "Fajr", time: times.Fajr },
+          { name: "Dhuhr", time: times.Dhuhr },
+          { name: "Asr", time: times.Asr },
+          { name: "Maghrib", time: times.Maghrib },
+          { name: "Isha", time: times.Isha },
+        ];
+        await schedulePrayerNotifications(prayerList, cityName);
+      }
+    } catch {
+      setError("Failed to fetch prayer times. Check your connection.");
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => {
-    loadPrayerTimes();
-  }, []);
+  const handleManualSearch = async () => {
+    if (!manualInput.trim()) return;
+    setManualLoading(true);
+    const result = await geocodeCity(manualInput);
+    setManualLoading(false);
+    if (!result) {
+      Alert.alert("Not Found", "Could not find that city. Try a different spelling.");
+      return;
+    }
+    await AsyncStorage.setItem(
+      LOCATION_STORAGE_KEY,
+      JSON.stringify(result)
+    );
+    setShowManualModal(false);
+    setManualInput("");
+    await loadTimes(result.lat, result.lng, result.city);
+  };
 
-  const topPad = Platform.OS === "web" ? 67 : insets.top;
-  const bottomPad = Platform.OS === "web" ? 84 + 34 : 100;
+  const handleResetLocation = () => {
+    Alert.alert(
+      "Reset Location",
+      "Detect your location automatically?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Detect",
+          onPress: async () => {
+            await AsyncStorage.removeItem(LOCATION_STORAGE_KEY);
+            setPrayerTimes(null);
+            setCity("");
+            await detectLocation();
+          },
+        },
+      ]
+    );
+  };
+
+  const toggleNotifications = async (val: boolean) => {
+    if (Platform.OS === "web") {
+      Alert.alert("Not available", "Notifications require the mobile app.");
+      return;
+    }
+    if (val) {
+      const granted = await requestNotificationPermissions();
+      if (!granted) {
+        Alert.alert(
+          "Permission Needed",
+          "Please allow notifications in your device settings."
+        );
+        return;
+      }
+      setNotifsEnabled(true);
+      await AsyncStorage.setItem(NOTIF_PREF_KEY, "true");
+      if (prayerTimes && city) {
+        const prayerList = [
+          { name: "Fajr", time: prayerTimes.Fajr },
+          { name: "Dhuhr", time: prayerTimes.Dhuhr },
+          { name: "Asr", time: prayerTimes.Asr },
+          { name: "Maghrib", time: prayerTimes.Maghrib },
+          { name: "Isha", time: prayerTimes.Isha },
+        ];
+        await schedulePrayerNotifications(prayerList, city);
+        Alert.alert(
+          "Notifications On",
+          "You'll receive reminders for each prayer time. 🕌"
+        );
+      }
+    } else {
+      setNotifsEnabled(false);
+      await AsyncStorage.setItem(NOTIF_PREF_KEY, "false");
+      await cancelPrayerNotifications();
+    }
+  };
 
   const prayers: PrayerInfo[] = prayerTimes
     ? [
@@ -140,9 +319,26 @@ export default function PrayerScreen() {
           <Text style={[styles.title, { color: colors.foreground }]}>
             Prayer Times
           </Text>
-          <TouchableOpacity onPress={loadPrayerTimes}>
-            <Ionicons name="refresh" size={22} color={colors.primary} />
-          </TouchableOpacity>
+          <View style={styles.titleActions}>
+            <TouchableOpacity
+              onPress={() => setShowManualModal(true)}
+              style={[styles.iconBtn, { backgroundColor: colors.secondary }]}
+            >
+              <Ionicons name="search-outline" size={18} color={colors.primary} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={handleResetLocation}
+              style={[styles.iconBtn, { backgroundColor: colors.secondary }]}
+            >
+              <Ionicons name="locate-outline" size={18} color={colors.primary} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={loadFromStoredOrFresh}
+              style={[styles.iconBtn, { backgroundColor: colors.secondary }]}
+            >
+              <Ionicons name="refresh" size={18} color={colors.primary} />
+            </TouchableOpacity>
+          </View>
         </View>
 
         {city ? (
@@ -151,6 +347,11 @@ export default function PrayerScreen() {
             <Text style={[styles.locationText, { color: colors.mutedForeground }]}>
               {city}
             </Text>
+            <TouchableOpacity onPress={() => setShowManualModal(true)}>
+              <Text style={[styles.changeText, { color: colors.primary }]}>
+                Change
+              </Text>
+            </TouchableOpacity>
           </View>
         ) : null}
 
@@ -158,143 +359,237 @@ export default function PrayerScreen() {
           <View style={styles.center}>
             <ActivityIndicator size="large" color={colors.primary} />
             <Text style={[styles.loadingText, { color: colors.mutedForeground }]}>
-              Getting your location...
+              Getting prayer times...
             </Text>
           </View>
         )}
 
         {error && !loading && (
           <View style={styles.center}>
-            <Ionicons name="location-outline" size={44} color={colors.mutedForeground} />
+            <Ionicons
+              name="location-outline"
+              size={44}
+              color={colors.mutedForeground}
+            />
             <Text style={[styles.errorText, { color: colors.mutedForeground }]}>
               {error}
             </Text>
             <TouchableOpacity
               style={[styles.retryBtn, { backgroundColor: colors.primary }]}
-              onPress={loadPrayerTimes}
+              onPress={detectLocation}
             >
               <Text style={[styles.retryText, { color: colors.primaryForeground }]}>
-                Try Again
+                Detect Location
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.secondaryBtn, { borderColor: colors.primary }]}
+              onPress={() => setShowManualModal(true)}
+            >
+              <Text style={[styles.secondaryBtnText, { color: colors.primary }]}>
+                Enter City Manually
               </Text>
             </TouchableOpacity>
           </View>
         )}
 
         {!loading && !error && prayerTimes && (
-          <View style={styles.timesContainer}>
-            {prayers.map((prayer) => {
-              const isNext = prayer.key === nextPrayer;
-              return (
-                <View
-                  key={prayer.name}
-                  style={[
-                    styles.prayerRow,
-                    {
-                      backgroundColor: isNext ? colors.primary : colors.card,
-                      borderColor: isNext ? colors.primary : colors.border,
-                    },
-                  ]}
-                >
-                  <View style={styles.prayerLeft}>
-                    <Ionicons
-                      name={prayer.icon as any}
-                      size={22}
-                      color={isNext ? colors.primaryForeground : colors.accent}
-                    />
-                    <Text
-                      style={[
-                        styles.prayerName,
-                        {
-                          color: isNext
-                            ? colors.primaryForeground
-                            : colors.foreground,
-                        },
-                      ]}
-                    >
-                      {prayer.name}
-                    </Text>
-                    {isNext && (
-                      <View
-                        style={[
-                          styles.nextBadge,
-                          { backgroundColor: colors.accent },
-                        ]}
-                      >
-                        <Text
-                          style={[
-                            styles.nextText,
-                            { color: colors.accentForeground },
-                          ]}
-                        >
-                          Next
-                        </Text>
-                      </View>
-                    )}
-                  </View>
-                  <Text
+          <>
+            <View style={styles.timesContainer}>
+              {prayers.map((prayer) => {
+                const isNext = prayer.key === nextPrayer;
+                return (
+                  <View
+                    key={prayer.name}
                     style={[
-                      styles.prayerTime,
+                      styles.prayerRow,
                       {
-                        color: isNext
-                          ? colors.primaryForeground
-                          : colors.foreground,
+                        backgroundColor: isNext ? colors.primary : colors.card,
+                        borderColor: isNext ? colors.primary : colors.border,
                       },
                     ]}
                   >
-                    {prayer.time}
+                    <View style={styles.prayerLeft}>
+                      <Ionicons
+                        name={prayer.icon}
+                        size={22}
+                        color={isNext ? colors.primaryForeground : colors.accent}
+                      />
+                      <Text
+                        style={[
+                          styles.prayerName,
+                          { color: isNext ? colors.primaryForeground : colors.foreground },
+                        ]}
+                      >
+                        {prayer.name}
+                      </Text>
+                      {isNext && (
+                        <View
+                          style={[styles.nextBadge, { backgroundColor: colors.accent }]}
+                        >
+                          <Text style={[styles.nextText, { color: colors.accentForeground }]}>
+                            Next
+                          </Text>
+                        </View>
+                      )}
+                    </View>
+                    <Text
+                      style={[
+                        styles.prayerTime,
+                        { color: isNext ? colors.primaryForeground : colors.foreground },
+                      ]}
+                    >
+                      {prayer.time}
+                    </Text>
+                  </View>
+                );
+              })}
+            </View>
+
+            <View
+              style={[
+                styles.notifCard,
+                { backgroundColor: colors.card, borderColor: colors.border },
+              ]}
+            >
+              <View style={styles.notifLeft}>
+                <Ionicons
+                  name={notifsEnabled ? "notifications" : "notifications-outline"}
+                  size={22}
+                  color={notifsEnabled ? colors.primary : colors.mutedForeground}
+                />
+                <View>
+                  <Text style={[styles.notifLabel, { color: colors.foreground }]}>
+                    Prayer Reminders
+                  </Text>
+                  <Text style={[styles.notifDesc, { color: colors.mutedForeground }]}>
+                    {notifsEnabled
+                      ? "You'll be notified at each prayer time"
+                      : "Get notified at each prayer time"}
                   </Text>
                 </View>
-              );
-            })}
+              </View>
+              <Switch
+                value={notifsEnabled}
+                onValueChange={toggleNotifications}
+                trackColor={{ false: colors.muted, true: colors.primary }}
+                thumbColor={colors.card}
+              />
+            </View>
 
-            <Text
-              style={[styles.disclaimer, { color: colors.mutedForeground }]}
-            >
-              Times calculated using the ISNA method. Verify with your local mosque for Friday prayers.
+            <Text style={[styles.disclaimer, { color: colors.mutedForeground }]}>
+              Times calculated using the Muslim World League method. Verify
+              with your local mosque for Friday prayers.
             </Text>
-          </View>
+          </>
         )}
       </ScrollView>
+
+      <Modal
+        visible={showManualModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowManualModal(false)}
+      >
+        <Pressable
+          style={styles.modalOverlay}
+          onPress={() => setShowManualModal(false)}
+        >
+          <View
+            style={[
+              styles.modalSheet,
+              { backgroundColor: colors.card, borderColor: colors.border },
+            ]}
+          >
+            <View
+              style={[styles.sheetHandle, { backgroundColor: colors.border }]}
+            />
+            <Text style={[styles.modalTitle, { color: colors.foreground }]}>
+              Enter Your City
+            </Text>
+            <Text
+              style={[styles.modalDesc, { color: colors.mutedForeground }]}
+            >
+              Search for your city to get accurate prayer times.
+            </Text>
+            <View
+              style={[
+                styles.searchBar,
+                { backgroundColor: colors.background, borderColor: colors.border },
+              ]}
+            >
+              <Ionicons name="search" size={18} color={colors.mutedForeground} />
+              <TextInput
+                style={[styles.searchInput, { color: colors.foreground }]}
+                placeholder="e.g. Glasgow, Cairo, Karachi..."
+                placeholderTextColor={colors.mutedForeground}
+                value={manualInput}
+                onChangeText={setManualInput}
+                onSubmitEditing={handleManualSearch}
+                returnKeyType="search"
+                autoFocus
+              />
+            </View>
+            <TouchableOpacity
+              style={[
+                styles.searchBtn,
+                {
+                  backgroundColor: colors.primary,
+                  opacity: manualInput.trim() ? 1 : 0.5,
+                },
+              ]}
+              onPress={handleManualSearch}
+              disabled={!manualInput.trim() || manualLoading}
+            >
+              {manualLoading ? (
+                <ActivityIndicator size="small" color={colors.primaryForeground} />
+              ) : (
+                <Text
+                  style={[styles.searchBtnText, { color: colors.primaryForeground }]}
+                >
+                  Find Prayer Times
+                </Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        </Pressable>
+      </Modal>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  scroll: {
-    paddingHorizontal: 20,
-    gap: 12,
-  },
+  container: { flex: 1 },
+  scroll: { paddingHorizontal: 20, gap: 12 },
   titleRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
   },
-  title: {
-    fontSize: 28,
-    fontFamily: "Inter_700Bold",
+  title: { fontSize: 28, fontFamily: "Inter_700Bold" },
+  titleActions: { flexDirection: "row", gap: 8 },
+  iconBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
   },
   locationRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
+    flexWrap: "wrap",
   },
-  locationText: {
-    fontSize: 14,
-    fontFamily: "Inter_400Regular",
-  },
+  locationText: { fontSize: 14, fontFamily: "Inter_400Regular" },
+  changeText: { fontSize: 13, fontFamily: "Inter_500Medium" },
   center: {
     alignItems: "center",
     justifyContent: "center",
     paddingVertical: 60,
     gap: 14,
   },
-  loadingText: {
-    fontSize: 14,
-    fontFamily: "Inter_400Regular",
-  },
+  loadingText: { fontSize: 14, fontFamily: "Inter_400Regular" },
   errorText: {
     fontSize: 15,
     fontFamily: "Inter_400Regular",
@@ -306,13 +601,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 28,
     paddingVertical: 12,
   },
-  retryText: {
-    fontSize: 15,
-    fontFamily: "Inter_600SemiBold",
+  retryText: { fontSize: 15, fontFamily: "Inter_600SemiBold" },
+  secondaryBtn: {
+    borderRadius: 10,
+    borderWidth: 1.5,
+    paddingHorizontal: 24,
+    paddingVertical: 10,
   },
-  timesContainer: {
-    gap: 8,
-  },
+  secondaryBtnText: { fontSize: 14, fontFamily: "Inter_500Medium" },
+  timesContainer: { gap: 8 },
   prayerRow: {
     borderRadius: 14,
     borderWidth: 1,
@@ -322,34 +619,77 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
   },
-  prayerLeft: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-  },
-  prayerName: {
-    fontSize: 16,
-    fontFamily: "Inter_500Medium",
-  },
-  nextBadge: {
-    borderRadius: 6,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-  },
+  prayerLeft: { flexDirection: "row", alignItems: "center", gap: 12 },
+  prayerName: { fontSize: 16, fontFamily: "Inter_500Medium" },
+  nextBadge: { borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 },
   nextText: {
     fontSize: 11,
     fontFamily: "Inter_600SemiBold",
     letterSpacing: 0.5,
   },
-  prayerTime: {
-    fontSize: 18,
-    fontFamily: "Inter_600SemiBold",
+  prayerTime: { fontSize: 18, fontFamily: "Inter_600SemiBold" },
+  notifCard: {
+    borderRadius: 14,
+    borderWidth: 1,
+    paddingHorizontal: 18,
+    paddingVertical: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
   },
+  notifLeft: { flexDirection: "row", alignItems: "center", gap: 12, flex: 1 },
+  notifLabel: { fontSize: 15, fontFamily: "Inter_500Medium" },
+  notifDesc: { fontSize: 12, fontFamily: "Inter_400Regular", marginTop: 2 },
   disclaimer: {
     fontSize: 11,
     fontFamily: "Inter_400Regular",
     textAlign: "center",
     lineHeight: 18,
-    marginTop: 8,
   },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "flex-end",
+  },
+  modalSheet: {
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    borderWidth: 1,
+    padding: 24,
+    paddingBottom: 44,
+    gap: 12,
+  },
+  sheetHandle: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    alignSelf: "center",
+    marginBottom: 8,
+  },
+  modalTitle: { fontSize: 20, fontFamily: "Inter_600SemiBold" },
+  modalDesc: { fontSize: 14, fontFamily: "Inter_400Regular", lineHeight: 20 },
+  searchBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 15,
+    fontFamily: "Inter_400Regular",
+    padding: 0,
+  },
+  searchBtn: {
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: 50,
+  },
+  searchBtnText: { fontSize: 15, fontFamily: "Inter_600SemiBold" },
 });

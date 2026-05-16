@@ -87,7 +87,27 @@ export default function AyahOfDayScreen() {
   const { settings } = useQuranSettings();
   const [ayahNumber, setAyahNumber] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
+  const [selectedBg, setSelectedBg] = useState("#FFFFFF");
   const cardRef = useRef<View>(null);
+
+  const BG_COLORS = [
+    { label: "White", value: "#FFFFFF" },
+    { label: "Parchment", value: "#FEF3C7" },
+    { label: "Sage", value: "#F0FFF4" },
+    { label: "Sky", value: "#EFF6FF" },
+    { label: "Slate", value: "#334155" },
+    { label: "Forest", value: "#1B4332" },
+    { label: "Navy", value: "#1E3A5F" },
+    { label: "Dark", value: "#1A1A1A" },
+  ];
+
+  const isLightBg = (hex: string) => {
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+    return r * 0.299 + g * 0.587 + b * 0.114 > 128;
+  };
+  const cardTextColor = isLightBg(selectedBg) ? "#1A1A1A" : "#F5F5F5";
 
   const arabicFont = getArabicFontFamily(settings.fontType);
 
@@ -109,8 +129,18 @@ export default function AyahOfDayScreen() {
       const uri = await captureRef(cardRef, {
         format: "png",
         quality: 1,
-        result: "tmpfile",
+        result: Platform.OS === "web" ? "data-uri" : "tmpfile",
       });
+
+      if (Platform.OS === "web") {
+        const link = document.createElement("a");
+        link.href = uri as string;
+        link.download = `quran-${data.surah.number}-${data.numberInSurah}.png`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        return;
+      }
 
       if (mode === "share") {
         const isAvail = await Sharing.isAvailableAsync();
@@ -123,15 +153,16 @@ export default function AyahOfDayScreen() {
         const { status } = await MediaLibrary.requestPermissionsAsync();
         if (status === "granted") {
           await MediaLibrary.saveToLibraryAsync(uri);
-          Alert.alert("Saved", "Image saved to your camera roll.");
+          Alert.alert("Saved ✓", "Image saved to your camera roll.");
         } else {
           Alert.alert(
             "Permission needed",
-            "Please allow access to save images."
+            "Please allow photo library access in Settings."
           );
         }
       }
-    } catch {
+    } catch (err) {
+      console.error("captureRef error:", err);
       Alert.alert("Error", "Failed to capture the image. Please try again.");
     } finally {
       setSaving(false);
@@ -235,15 +266,17 @@ export default function AyahOfDayScreen() {
               ref={cardRef}
               style={[
                 styles.arabicCard,
-                {
-                  backgroundColor: "#FFFFFF",
-                  borderColor: colors.border,
-                },
+                { backgroundColor: selectedBg, borderColor: "transparent" },
               ]}
               collapsable={false}
             >
               <View style={styles.cardWatermark}>
-                <Text style={[styles.watermarkText, { color: colors.primary + "44" }]}>
+                <Text
+                  style={[
+                    styles.watermarkText,
+                    { color: isLightBg(selectedBg) ? "#00000022" : "#FFFFFF22" },
+                  ]}
+                >
                   The Holy Quran
                 </Text>
               </View>
@@ -251,7 +284,7 @@ export default function AyahOfDayScreen() {
                 style={[
                   styles.arabicText,
                   {
-                    color: "#1A1A1A",
+                    color: cardTextColor,
                     fontFamily: arabicFont,
                     fontSize: settings.arabicFontSize,
                     lineHeight: settings.arabicFontSize * 2.0,
@@ -264,15 +297,45 @@ export default function AyahOfDayScreen() {
               <View
                 style={[
                   styles.divider,
-                  { backgroundColor: colors.accent },
+                  {
+                    backgroundColor: isLightBg(selectedBg)
+                      ? colors.accent
+                      : colors.primary,
+                  },
                 ]}
               />
 
-              <Text style={styles.translationText}>{data.translation}</Text>
+              <Text style={[styles.translationText, { color: cardTextColor }]}>
+                {data.translation}
+              </Text>
 
-              <Text style={styles.referenceText}>
+              <Text style={[styles.referenceText, { color: cardTextColor + "BB" }]}>
                 — {data.surah.englishName} {data.numberInSurah}
               </Text>
+            </View>
+
+            {/* Background colour picker */}
+            <View style={styles.bgPickerContainer}>
+              <Text style={[styles.bgPickerLabel, { color: colors.mutedForeground }]}>
+                Card Background
+              </Text>
+              <View style={styles.bgSwatches}>
+                {BG_COLORS.map((bg) => (
+                  <TouchableOpacity
+                    key={bg.value}
+                    style={[
+                      styles.bgSwatch,
+                      {
+                        backgroundColor: bg.value,
+                        borderColor:
+                          selectedBg === bg.value ? colors.primary : colors.border,
+                        borderWidth: selectedBg === bg.value ? 2.5 : 1,
+                      },
+                    ]}
+                    onPress={() => setSelectedBg(bg.value)}
+                  />
+                ))}
+              </View>
             </View>
 
             <View style={styles.imageActions}>
@@ -435,4 +498,23 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   imageBtnText: { fontSize: 14, fontFamily: "Inter_600SemiBold" },
+  bgPickerContainer: {
+    gap: 8,
+  },
+  bgPickerLabel: {
+    fontSize: 12,
+    fontFamily: "Inter_500Medium",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  bgSwatches: {
+    flexDirection: "row",
+    gap: 10,
+    flexWrap: "wrap",
+  },
+  bgSwatch: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+  },
 });

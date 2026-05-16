@@ -1,4 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
 import React, { useState } from "react";
 import {
   Modal,
@@ -126,6 +127,7 @@ export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const { settings, updateSetting } = useQuranSettings();
   const [pickerMode, setPickerMode] = useState<PickerMode>(null);
+  const router = useRouter();
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const bottomPad = Platform.OS === "web" ? 84 + 34 : 100;
@@ -228,7 +230,7 @@ export default function SettingsScreen() {
             />
           </SettingRow>
 
-          <SettingRow label="Tajweed Colors">
+          <SettingRow label="Show Tajweed">
             <Switch
               value={settings.showTajweed}
               onValueChange={(v) => updateSetting("showTajweed", v)}
@@ -236,6 +238,24 @@ export default function SettingsScreen() {
               thumbColor={colors.card}
             />
           </SettingRow>
+
+          <TouchableOpacity
+            style={[styles.settingRow, { borderBottomColor: colors.border }]}
+            onPress={() => router.push("/tajweed-rules" as any)}
+          >
+            <View style={styles.settingLabelGroup}>
+              <Text style={[styles.settingLabel, { color: colors.foreground }]}>
+                Tajweed Rules
+              </Text>
+              <Text style={[styles.settingDesc, { color: colors.mutedForeground }]}>
+                Configure which rules show colour highlights
+              </Text>
+            </View>
+            <View style={styles.pickerValue}>
+              <Ionicons name="color-palette-outline" size={18} color={colors.primary} />
+              <Ionicons name="chevron-forward" size={16} color={colors.mutedForeground} />
+            </View>
+          </TouchableOpacity>
 
           <SettingRow
             label="Continuous Mode"
@@ -436,6 +456,26 @@ export default function SettingsScreen() {
             </View>
           </TouchableOpacity>
         </View>
+
+        {/* ABOUT */}
+        <View
+          style={[
+            styles.section,
+            { backgroundColor: colors.card, borderColor: colors.border },
+          ]}
+        >
+          <SectionHeader title="ABOUT" />
+          <View style={styles.aboutContainer}>
+            <Text style={[styles.duaText, { color: colors.foreground }]}>
+              May Allah SWT (سُبْحَانَهُ وَتَعَالَى) make us sincere and accept
+              our deeds and save us, our parents, grandparents from the fire and
+              the punishment of the grave, ameen.
+            </Text>
+            <Text style={[styles.versionText, { color: colors.mutedForeground }]}>
+              The Holy Quran App · v1.0.0
+            </Text>
+          </View>
+        </View>
       </ScrollView>
 
       <Modal
@@ -620,5 +660,20 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontFamily: "Inter_400Regular",
     marginTop: 2,
+  },
+  aboutContainer: {
+    padding: 18,
+    gap: 12,
+  },
+  duaText: {
+    fontSize: 15,
+    fontFamily: "Inter_400Regular",
+    lineHeight: 24,
+    textAlign: "center",
+  },
+  versionText: {
+    fontSize: 12,
+    fontFamily: "Inter_400Regular",
+    textAlign: "center",
   },
 });
