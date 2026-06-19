@@ -169,7 +169,7 @@ export default function AyahOfDayScreen() {
     }
   };
 
-  const topPad = Platform.OS === "web" ? 67 : insets.top;
+  const topPad = Platform.OS === "web" ? 20 : insets.top;
   const bottomPad = Platform.OS === "web" ? 84 + 34 : 100;
 
   return (
@@ -447,7 +447,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     padding: 24,
     gap: 14,
-    overflow: "hidden",
   },
   cardWatermark: {
     position: "absolute",

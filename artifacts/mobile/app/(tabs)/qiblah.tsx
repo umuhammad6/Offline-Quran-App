@@ -252,7 +252,7 @@ export default function QiblahScreen() {
   const [sensorAvail, setSensorAvail] = useState(true);
   const magSub = useRef<ReturnType<typeof Magnetometer.addListener> | null>(null);
 
-  const topPad = Platform.OS === "web" ? 67 : insets.top;
+  const topPad = Platform.OS === "web" ? 20 : insets.top;
 
   const getLocation = async () => {
     setLocationState("loading");
@@ -306,19 +306,29 @@ export default function QiblahScreen() {
       return;
     }
 
-    Magnetometer.isAvailableAsync().then((avail) => {
-      if (!avail) {
-        setSensorAvail(false);
-        return;
-      }
+    let didReceiveData = false;
+    const noDataTimer = setTimeout(() => {
+      if (!didReceiveData) setSensorAvail(false);
+    }, 4000);
+
+    try {
       Magnetometer.setUpdateInterval(100);
       magSub.current = Magnetometer.addListener(({ x, y }) => {
+        if (!didReceiveData) {
+          didReceiveData = true;
+          clearTimeout(noDataTimer);
+          setSensorAvail(true);
+        }
         const h = getMagneticHeading(x, y);
         setHeading(h);
       });
-    });
+    } catch {
+      clearTimeout(noDataTimer);
+      setSensorAvail(false);
+    }
 
     return () => {
+      clearTimeout(noDataTimer);
       magSub.current?.remove();
     };
   }, [locationState]);
@@ -334,7 +344,7 @@ export default function QiblahScreen() {
         style={[
           styles.header,
           {
-            paddingTop: topPad + 12,
+            paddingTop: topPad + 4,
             backgroundColor: colors.background,
             borderBottomColor: colors.border,
           },

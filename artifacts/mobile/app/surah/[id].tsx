@@ -73,9 +73,10 @@ async function fetchAyahTafseer(
 const BISMILLAH = "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ";
 
 export default function SurahScreen() {
-  const { id, scrollToAyah } = useLocalSearchParams<{
+  const { id, scrollToAyah, forceCardMode } = useLocalSearchParams<{
     id: string;
     scrollToAyah?: string;
+    forceCardMode?: string;
   }>();
   const colors = useColors();
   const insets = useSafeAreaInsets();
@@ -90,7 +91,12 @@ export default function SurahScreen() {
     ? "quran-tajweed"
     : getArabicEdition(settings.fontType);
 
+  const effectiveContinuous = settings.continuousMode && forceCardMode !== "true";
+
   const flatRef = useRef<FlatList>(null);
+  const scrollRef = useRef<ScrollView>(null);
+  const ayahPositions = useRef<Map<number, number>>(new Map());
+
   const [actionAyah, setActionAyah] = useState<AyahData | null>(null);
   const [tafseerCache, setTafseerCache] = useState<Map<number, string | null>>(
     new Map()
@@ -136,8 +142,10 @@ export default function SurahScreen() {
   }, [arabicData, fontFamily, colors.accent]);
 
   useEffect(() => {
-    if (arabicData && scrollToAyah) {
-      const ayahNum = Number(scrollToAyah);
+    if (!arabicData || !scrollToAyah) return;
+    const ayahNum = Number(scrollToAyah);
+
+    if (!effectiveContinuous) {
       const index = arabicData.ayahs.findIndex(
         (a) => a.numberInSurah === ayahNum
       );
@@ -148,10 +156,17 @@ export default function SurahScreen() {
             animated: true,
             viewPosition: 0.1,
           });
-        }, 500);
+        }, 800);
       }
+    } else {
+      setTimeout(() => {
+        const y = ayahPositions.current.get(ayahNum);
+        if (y !== undefined) {
+          scrollRef.current?.scrollTo({ y: Math.max(0, y - 60), animated: true });
+        }
+      }, 800);
     }
-  }, [arabicData, scrollToAyah]);
+  }, [arabicData, scrollToAyah, effectiveContinuous]);
 
   const ayahs: AyahData[] = useMemo(
     () =>
@@ -324,8 +339,9 @@ export default function SurahScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {settings.continuousMode ? (
+      {effectiveContinuous ? (
         <ScrollView
+          ref={scrollRef}
           contentContainerStyle={{
             paddingBottom: Platform.OS === "web" ? 84 + 34 : 100,
           }}
@@ -333,67 +349,96 @@ export default function SurahScreen() {
         >
           {surahHeader}
           {bismillahBlock}
-          <View
-            style={[
-              styles.continuousCard,
-              { backgroundColor: colors.card, borderColor: colors.border },
-            ]}
-          >
-            <Text
-              style={{
-                fontFamily,
-                fontSize: settings.arabicFontSize,
-                lineHeight: settings.arabicFontSize * 2.2,
-                color: colors.foreground,
-                textAlign: "right",
-                writingDirection: "rtl",
-              }}
-            >
-              {ayahs.map((ayah) => (
-                <React.Fragment key={ayah.numberInSurah}>
-                  <Text>{settings.showTajweed ? stripTajweedTags(ayah.text) : ayah.text}</Text>
-                  <Text
-                    style={{ color: colors.accent, fontSize: settings.arabicFontSize * 0.72 }}
-                  >
-                    {" "}﴿{ayah.numberInSurah}﴾{" "}
-                  </Text>
-                </React.Fragment>
-              ))}
+
+          <View style={[styles.contHint, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Ionicons name="hand-left-outline" size={13} color={colors.mutedForeground} />
+            <Text style={[styles.contHintText, { color: colors.mutedForeground }]}>
+              Tap any ayah for share, copy, bookmark & more
             </Text>
           </View>
 
-          {settings.showTranslation && translationData && (
-            <View
-              style={[
-                styles.continuousTranslation,
-                { backgroundColor: colors.card, borderColor: colors.border },
-              ]}
-            >
-              <Text
-                style={[styles.continuousTranslationTitle, { color: colors.mutedForeground }]}
+          {ayahs.map((ayah) => {
+            const bookmarked = isBookmarked(ayah.surahNumber, ayah.numberInSurah);
+            return (
+              <Pressable
+                key={ayah.numberInSurah}
+                onPress={() => handleTap(ayah)}
+                onLayout={(e) => {
+                  ayahPositions.current.set(
+                    ayah.numberInSurah,
+                    e.nativeEvent.layout.y
+                  );
+                }}
+                style={({ pressed }) => [
+                  styles.contAyah,
+                  {
+                    backgroundColor: pressed ? colors.secondary : "transparent",
+                    borderBottomColor: colors.border,
+                  },
+                ]}
               >
-                Translation
-              </Text>
-              {ayahs.map((ayah) => (
-                <Text
-                  key={ayah.numberInSurah}
-                  style={[
-                    styles.continuousTranslationText,
-                    {
+                <View style={styles.contAyahMeta}>
+                  <View style={[styles.contAyahBadge, { borderColor: colors.accent }]}>
+                    <Text style={[styles.contAyahNum, { color: colors.accent }]}>
+                      {ayah.numberInSurah}
+                    </Text>
+                  </View>
+                  {bookmarked && (
+                    <Ionicons name="bookmark" size={12} color={colors.accent} />
+                  )}
+                </View>
+
+                {settings.showTajweed ? (
+                  <TajweedText
+                    text={ayah.text}
+                    fontSize={settings.arabicFontSize}
+                    fontFamily={fontFamily}
+                    color={colors.foreground}
+                  />
+                ) : (
+                  <Text
+                    style={{
+                      fontFamily,
+                      fontSize: settings.arabicFontSize,
                       color: colors.foreground,
-                      fontSize: settings.translationFontSize,
-                      lineHeight: settings.translationFontSize * 1.8,
-                    },
-                  ]}
-                >
-                  <Text style={{ color: colors.accent, fontFamily: "Inter_600SemiBold" }}>
-                    {ayah.numberInSurah}.{" "}
+                      textAlign: "right",
+                      writingDirection: "rtl",
+                      lineHeight: settings.arabicFontSize * 2.2,
+                    }}
+                  >
+                    {ayah.text}
+                    <Text
+                      style={{
+                        color: colors.accent,
+                        fontSize: settings.arabicFontSize * 0.72,
+                      }}
+                    >
+                      {" "}﴿{ayah.numberInSurah}﴾
+                    </Text>
                   </Text>
-                  {ayah.translation ?? ""}
-                </Text>
-              ))}
-            </View>
-          )}
+                )}
+
+                {settings.showTranslation && ayah.translation ? (
+                  <Text
+                    style={[
+                      styles.contTranslation,
+                      {
+                        color: colors.mutedForeground,
+                        fontSize: settings.translationFontSize,
+                        lineHeight: settings.translationFontSize * 1.7,
+                        borderTopColor: colors.border,
+                      },
+                    ]}
+                  >
+                    <Text style={{ color: colors.accent, fontFamily: "Inter_600SemiBold" }}>
+                      {ayah.numberInSurah}.{" "}
+                    </Text>
+                    {ayah.translation}
+                  </Text>
+                ) : null}
+              </Pressable>
+            );
+          })}
         </ScrollView>
       ) : (
         <FlatList
@@ -549,7 +594,12 @@ export default function SurahScreen() {
           contentContainerStyle={{
             paddingBottom: Platform.OS === "web" ? 84 + 34 : 100,
           }}
-          onScrollToIndexFailed={() => {}}
+          onScrollToIndexFailed={(info) => {
+            flatRef.current?.scrollToOffset({
+              offset: info.averageItemLength * info.index,
+              animated: true,
+            });
+          }}
           showsVerticalScrollIndicator={false}
         />
       )}
@@ -730,6 +780,54 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   bismillahText: { textAlign: "center", writingDirection: "rtl" },
+  contHint: {
+    marginHorizontal: 16,
+    marginTop: 10,
+    marginBottom: 2,
+    borderRadius: 10,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  contHintText: {
+    fontSize: 11,
+    fontFamily: "Inter_400Regular",
+    flex: 1,
+  },
+  contAyah: {
+    paddingHorizontal: 20,
+    paddingTop: 14,
+    paddingBottom: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    gap: 6,
+  },
+  contAyahMeta: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginBottom: 4,
+  },
+  contAyahBadge: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  contAyahNum: {
+    fontSize: 11,
+    fontFamily: "Inter_600SemiBold",
+  },
+  contTranslation: {
+    fontFamily: "Inter_400Regular",
+    marginTop: 6,
+    paddingTop: 8,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
   ayahCard: {
     marginHorizontal: 16,
     marginVertical: 5,
@@ -768,29 +866,6 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   tafseerText: { fontFamily: "Inter_400Regular" },
-  continuousCard: {
-    margin: 16,
-    marginTop: 12,
-    borderRadius: 16,
-    borderWidth: 1,
-    padding: 20,
-  },
-  continuousTranslation: {
-    margin: 16,
-    marginTop: 0,
-    borderRadius: 16,
-    borderWidth: 1,
-    padding: 20,
-    gap: 10,
-  },
-  continuousTranslationTitle: {
-    fontSize: 11,
-    fontFamily: "Inter_600SemiBold",
-    letterSpacing: 1,
-    textTransform: "uppercase",
-    marginBottom: 4,
-  },
-  continuousTranslationText: { fontFamily: "Inter_400Regular" },
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.4)",

@@ -1,0 +1,13 @@
+A few issues to fix:
+When the continuous mode is toggled on and the tajweed rules are turned on. they still don't display colored tajweed (it works when continuous mode is off but not when it's on) 
+Also when the continuous mode is toggled on, it doesn't let me click on an ayah to give me the list to share/copy/bookmark/mark as last read as it does when the continuous mode is off
+Also in qiblah direction, it's not updating the qiblah direction live while the phone moves, it says compass sensor isn't available, please fix this so it's working as a live qiblah direction tool
+The bookmark tab is available now but it doesn't let me delete/remove bookmarks from it 
+Also in prayer times, I click the location thing it doesn't ask for permission to locate me and when I'm searching manually to enter my location, it doesn't automatically show me a list of locations like if I've wrote Glasg, it should show me a list of all places like "Glasgow, scotland" or if there's a place in USA like "Glasgow, Kentucky, USA"(this is just an example for you)
+Also in the search tab, it's searching for the ayaat accurately but when I click on the ayah and the mode is in continuous mode then it just shows the quran ayaat all of them, doesn't highlight which ayat it is and doesn't give a translation of it ( I want it to take me to the search result ( specific ayah and have translation for it also, you can display it as non continous mode when I'm on search tab and change it back if continuous mode was enabled when I go back off search tab(do it how you think is best)
+Also in search tab when I click one of the search results, sometimes it takes me to th exact ayah and sometimes it just opens surah at beginning but doesn't take me to the ayah
+The same for bookmark tab, please make sure when I click on it, it will take me to that exact ayah
+The same for making something last read, when I go home and I click to continue the last read it should take me directly to my last read ayah but it just takes me to the surah at the beginning
+For the ayah of the day, it's still not letting me share image or save image, is it because it's not an actual app and doesn't have permission yet? Please fix this also
+Regarding the UI, there's a blank space at the top, you can screenshot and check, it's there in all tabs, could you make it so it's no there and text/headlines etc start from near the top with only the basic space that's required not the extra space that's there right now
+(Do all of these, it's not too hard for you, you can do it step by step, don't ask me if i want to do one by one or after since it's a lot or whatnot - I want it all implemented)

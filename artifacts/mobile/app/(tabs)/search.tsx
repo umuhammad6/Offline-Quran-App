@@ -112,7 +112,7 @@ export default function SearchScreen() {
     inputRef.current?.focus();
   };
 
-  const topPad = Platform.OS === "web" ? 67 : insets.top;
+  const topPad = Platform.OS === "web" ? 20 : insets.top;
   const highlightBg = colors.primary + "22";
 
   return (
@@ -121,7 +121,7 @@ export default function SearchScreen() {
         style={[
           styles.header,
           {
-            paddingTop: topPad + 12,
+            paddingTop: topPad + 4,
             backgroundColor: colors.background,
             borderBottomColor: colors.border,
           },
@@ -273,6 +273,7 @@ export default function SearchScreen() {
                   params: {
                     id: item.surah.number.toString(),
                     scrollToAyah: item.numberInSurah.toString(),
+                    forceCardMode: "true",
                   },
                 })
               }

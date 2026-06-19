@@ -129,7 +129,7 @@ export default function SettingsScreen() {
   const [pickerMode, setPickerMode] = useState<PickerMode>(null);
   const router = useRouter();
 
-  const topPad = Platform.OS === "web" ? 67 : insets.top;
+  const topPad = Platform.OS === "web" ? 20 : insets.top;
   const bottomPad = Platform.OS === "web" ? 84 + 34 : 100;
 
   const pickerOptions =

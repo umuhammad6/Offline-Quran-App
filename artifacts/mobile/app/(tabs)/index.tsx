@@ -49,7 +49,7 @@ export default function QuranScreen() {
     );
   });
 
-  const topPad = Platform.OS === "web" ? 67 : insets.top;
+  const topPad = Platform.OS === "web" ? 20 : insets.top;
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -57,7 +57,7 @@ export default function QuranScreen() {
         style={[
           styles.header,
           {
-            paddingTop: topPad + 12,
+            paddingTop: topPad + 4,
             backgroundColor: colors.background,
             borderBottomColor: colors.border,
           },
@@ -154,6 +154,7 @@ export default function QuranScreen() {
                     params: {
                       id: lastRead.surahNumber.toString(),
                       scrollToAyah: lastRead.ayahNumber.toString(),
+                      forceCardMode: "true",
                     },
                   })
                 }

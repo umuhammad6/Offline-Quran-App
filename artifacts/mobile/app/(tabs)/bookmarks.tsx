@@ -5,6 +5,7 @@ import {
   Alert,
   FlatList,
   Platform,
+  Pressable,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -24,7 +25,7 @@ export default function BookmarksScreen() {
   const { settings } = useQuranSettings();
   const arabicFont = getArabicFontFamily(settings.fontType);
 
-  const topPad = Platform.OS === "web" ? 67 : insets.top;
+  const topPad = Platform.OS === "web" ? 20 : insets.top;
 
   const handleRemove = (id: string, surahName: string) => {
     Alert.alert(
@@ -52,6 +53,7 @@ export default function BookmarksScreen() {
       params: {
         id: surahNumber.toString(),
         scrollToAyah: ayahNumber.toString(),
+        forceCardMode: "true",
       },
     });
   };
@@ -62,7 +64,7 @@ export default function BookmarksScreen() {
         style={[
           styles.header,
           {
-            paddingTop: topPad + 12,
+            paddingTop: topPad + 4,
             backgroundColor: colors.background,
             borderBottomColor: colors.border,
           },
@@ -112,70 +114,70 @@ export default function BookmarksScreen() {
           }}
           showsVerticalScrollIndicator={false}
           renderItem={({ item }) => (
-            <TouchableOpacity
+            <View
               style={[
                 styles.bookmarkCard,
                 { backgroundColor: colors.card, borderColor: colors.border },
               ]}
-              onPress={() =>
-                handleNavigate(item.surahNumber, item.ayahNumber)
-              }
-              activeOpacity={0.7}
             >
-              <View
-                style={[
-                  styles.ayahBadge,
-                  { backgroundColor: colors.primary },
-                ]}
+              <Pressable
+                style={styles.bookmarkCardBody}
+                onPress={() => handleNavigate(item.surahNumber, item.ayahNumber)}
+                android_ripple={{ color: colors.secondary }}
               >
-                <Text
+                <View
                   style={[
-                    styles.ayahBadgeText,
-                    { color: colors.primaryForeground },
+                    styles.ayahBadge,
+                    { backgroundColor: colors.primary },
                   ]}
                 >
-                  {item.surahNumber}
-                </Text>
-              </View>
-
-              <View style={styles.bookmarkInfo}>
-                <View style={styles.bookmarkNameRow}>
-                  <Text
-                    style={[styles.surahEnglish, { color: colors.foreground }]}
-                  >
-                    {item.surahEnglishName}
-                  </Text>
                   <Text
                     style={[
-                      styles.surahArabic,
-                      { color: colors.accent, fontFamily: arabicFont },
+                      styles.ayahBadgeText,
+                      { color: colors.primaryForeground },
                     ]}
                   >
-                    {item.surahName}
+                    {item.surahNumber}
                   </Text>
                 </View>
-                <Text
-                  style={[styles.ayahRef, { color: colors.mutedForeground }]}
-                >
-                  Ayah {item.ayahNumber}
-                </Text>
-                <Text
-                  style={[styles.timestamp, { color: colors.mutedForeground }]}
-                >
-                  {new Date(item.timestamp).toLocaleDateString("en-US", {
-                    month: "short",
-                    day: "numeric",
-                    year: "numeric",
-                  })}
-                </Text>
-              </View>
+
+                <View style={styles.bookmarkInfo}>
+                  <View style={styles.bookmarkNameRow}>
+                    <Text
+                      style={[styles.surahEnglish, { color: colors.foreground }]}
+                    >
+                      {item.surahEnglishName}
+                    </Text>
+                    <Text
+                      style={[
+                        styles.surahArabic,
+                        { color: colors.accent, fontFamily: arabicFont },
+                      ]}
+                    >
+                      {item.surahName}
+                    </Text>
+                  </View>
+                  <Text
+                    style={[styles.ayahRef, { color: colors.mutedForeground }]}
+                  >
+                    Ayah {item.ayahNumber}
+                  </Text>
+                  <Text
+                    style={[styles.timestamp, { color: colors.mutedForeground }]}
+                  >
+                    {new Date(item.timestamp).toLocaleDateString("en-US", {
+                      month: "short",
+                      day: "numeric",
+                      year: "numeric",
+                    })}
+                  </Text>
+                </View>
+              </Pressable>
 
               <TouchableOpacity
                 style={styles.removeBtn}
-                onPress={() =>
-                  handleRemove(item.id, item.surahEnglishName)
-                }
-                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                onPress={() => handleRemove(item.id, item.surahEnglishName)}
+                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
               >
                 <Ionicons
                   name="trash-outline"
@@ -183,7 +185,7 @@ export default function BookmarksScreen() {
                   color={colors.mutedForeground}
                 />
               </TouchableOpacity>
-            </TouchableOpacity>
+            </View>
           )}
         />
       )}
@@ -238,10 +240,16 @@ const styles = StyleSheet.create({
     marginVertical: 5,
     borderRadius: 14,
     borderWidth: 1,
-    padding: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    overflow: "hidden",
+  },
+  bookmarkCardBody: {
+    flex: 1,
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
+    padding: 14,
   },
   ayahBadge: {
     width: 40,
@@ -263,5 +271,5 @@ const styles = StyleSheet.create({
   surahArabic: { fontSize: 16 },
   ayahRef: { fontSize: 13, fontFamily: "Inter_400Regular" },
   timestamp: { fontSize: 11, fontFamily: "Inter_400Regular", marginTop: 2 },
-  removeBtn: { padding: 4 },
+  removeBtn: { padding: 14 },
 });

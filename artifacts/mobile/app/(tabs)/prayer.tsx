@@ -1,10 +1,11 @@
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Location from "expo-location";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  FlatList,
   Modal,
   Platform,
   Pressable,
@@ -50,6 +51,20 @@ interface PrayerInfo {
   key: keyof PrayerTimes;
 }
 
+interface NominatimResult {
+  display_name: string;
+  lat: string;
+  lon: string;
+  address?: {
+    city?: string;
+    town?: string;
+    village?: string;
+    county?: string;
+    state?: string;
+    country?: string;
+  };
+}
+
 function getNextPrayer(times: PrayerTimes): string {
   const now = new Date();
   const currentMins = now.getHours() * 60 + now.getMinutes();
@@ -80,31 +95,13 @@ async function fetchPrayerTimesForCoords(
   return json.data.timings as PrayerTimes;
 }
 
-async function geocodeCity(
-  query: string
-): Promise<{ lat: number; lng: number; city: string } | null> {
-  try {
-    const encoded = encodeURIComponent(query.trim());
-    const res = await fetch(
-      `https://nominatim.openstreetmap.org/search?q=${encoded}&format=json&limit=1`,
-      { headers: { "User-Agent": "QuranApp/1.0" } }
-    );
-    const json = await res.json();
-    if (!json.length) return null;
-    const result = json[0];
-    const city =
-      result.address?.city ||
-      result.address?.town ||
-      result.address?.village ||
-      result.display_name.split(",")[0].trim();
-    return {
-      lat: parseFloat(result.lat),
-      lng: parseFloat(result.lon),
-      city,
-    };
-  } catch {
-    return null;
-  }
+function formatSuggestionCity(item: NominatimResult): string {
+  const a = item.address;
+  const city = a?.city || a?.town || a?.village || a?.county;
+  const state = a?.state;
+  const country = a?.country;
+  const parts = [city, state, country].filter(Boolean);
+  return parts.length > 0 ? parts.join(", ") : item.display_name.split(",")[0].trim();
 }
 
 export default function PrayerScreen() {
@@ -119,8 +116,11 @@ export default function PrayerScreen() {
   const [showManualModal, setShowManualModal] = useState(false);
   const [manualInput, setManualInput] = useState("");
   const [manualLoading, setManualLoading] = useState(false);
+  const [suggestions, setSuggestions] = useState<NominatimResult[]>([]);
+  const [suggestionsLoading, setSuggestionsLoading] = useState(false);
+  const autocompleteTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const topPad = Platform.OS === "web" ? 67 : insets.top;
+  const topPad = Platform.OS === "web" ? 20 : insets.top;
   const bottomPad = Platform.OS === "web" ? 84 + 34 : 100;
 
   useEffect(() => {
@@ -221,41 +221,74 @@ export default function PrayerScreen() {
     }
   };
 
+  const handleManualInputChange = (text: string) => {
+    setManualInput(text);
+    setSuggestions([]);
+    if (autocompleteTimer.current) clearTimeout(autocompleteTimer.current);
+    if (text.trim().length < 2) {
+      setSuggestionsLoading(false);
+      return;
+    }
+    setSuggestionsLoading(true);
+    autocompleteTimer.current = setTimeout(async () => {
+      try {
+        const encoded = encodeURIComponent(text.trim());
+        const res = await fetch(
+          `https://nominatim.openstreetmap.org/search?q=${encoded}&format=json&limit=6&addressdetails=1`,
+          { headers: { "User-Agent": "QuranApp/1.0" } }
+        );
+        const json: NominatimResult[] = await res.json();
+        setSuggestions(json);
+      } catch {
+        setSuggestions([]);
+      } finally {
+        setSuggestionsLoading(false);
+      }
+    }, 350);
+  };
+
+  const selectSuggestion = async (item: NominatimResult) => {
+    const lat = parseFloat(item.lat);
+    const lng = parseFloat(item.lon);
+    const cityName = formatSuggestionCity(item);
+    setSuggestions([]);
+    setManualInput("");
+    setShowManualModal(false);
+    await AsyncStorage.setItem(
+      LOCATION_STORAGE_KEY,
+      JSON.stringify({ lat, lng, city: cityName })
+    );
+    await loadTimes(lat, lng, cityName);
+  };
+
   const handleManualSearch = async () => {
     if (!manualInput.trim()) return;
     setManualLoading(true);
-    const result = await geocodeCity(manualInput);
-    setManualLoading(false);
-    if (!result) {
-      Alert.alert("Not Found", "Could not find that city. Try a different spelling.");
-      return;
+    try {
+      const encoded = encodeURIComponent(manualInput.trim());
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/search?q=${encoded}&format=json&limit=1&addressdetails=1`,
+        { headers: { "User-Agent": "QuranApp/1.0" } }
+      );
+      const json: NominatimResult[] = await res.json();
+      if (!json.length) {
+        Alert.alert("Not Found", "Could not find that location. Try a different spelling.");
+        setManualLoading(false);
+        return;
+      }
+      await selectSuggestion(json[0]);
+    } catch {
+      Alert.alert("Error", "Failed to search. Check your connection.");
+    } finally {
+      setManualLoading(false);
     }
-    await AsyncStorage.setItem(
-      LOCATION_STORAGE_KEY,
-      JSON.stringify(result)
-    );
-    setShowManualModal(false);
-    setManualInput("");
-    await loadTimes(result.lat, result.lng, result.city);
   };
 
-  const handleResetLocation = () => {
-    Alert.alert(
-      "Reset Location",
-      "Detect your location automatically?",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Detect",
-          onPress: async () => {
-            await AsyncStorage.removeItem(LOCATION_STORAGE_KEY);
-            setPrayerTimes(null);
-            setCity("");
-            await detectLocation();
-          },
-        },
-      ]
-    );
+  const handleDetectLocation = async () => {
+    await AsyncStorage.removeItem(LOCATION_STORAGE_KEY);
+    setPrayerTimes(null);
+    setCity("");
+    await detectLocation();
   };
 
   const toggleNotifications = async (val: boolean) => {
@@ -311,7 +344,7 @@ export default function PrayerScreen() {
       <ScrollView
         contentContainerStyle={[
           styles.scroll,
-          { paddingTop: topPad + 20, paddingBottom: bottomPad },
+          { paddingTop: topPad + 8, paddingBottom: bottomPad },
         ]}
         showsVerticalScrollIndicator={false}
       >
@@ -327,7 +360,7 @@ export default function PrayerScreen() {
               <Ionicons name="search-outline" size={18} color={colors.primary} />
             </TouchableOpacity>
             <TouchableOpacity
-              onPress={handleResetLocation}
+              onPress={handleDetectLocation}
               style={[styles.iconBtn, { backgroundColor: colors.secondary }]}
             >
               <Ionicons name="locate-outline" size={18} color={colors.primary} />
@@ -489,28 +522,37 @@ export default function PrayerScreen() {
         visible={showManualModal}
         transparent
         animationType="slide"
-        onRequestClose={() => setShowManualModal(false)}
+        onRequestClose={() => {
+          setShowManualModal(false);
+          setSuggestions([]);
+          setManualInput("");
+        }}
       >
         <Pressable
           style={styles.modalOverlay}
-          onPress={() => setShowManualModal(false)}
+          onPress={() => {
+            setShowManualModal(false);
+            setSuggestions([]);
+            setManualInput("");
+          }}
         >
-          <View
+          <Pressable
             style={[
               styles.modalSheet,
               { backgroundColor: colors.card, borderColor: colors.border },
             ]}
+            onPress={() => {}}
           >
             <View
               style={[styles.sheetHandle, { backgroundColor: colors.border }]}
             />
             <Text style={[styles.modalTitle, { color: colors.foreground }]}>
-              Enter Your City
+              Search Location
             </Text>
             <Text
               style={[styles.modalDesc, { color: colors.mutedForeground }]}
             >
-              Search for your city to get accurate prayer times.
+              Type your city name to get accurate prayer times.
             </Text>
             <View
               style={[
@@ -524,12 +566,64 @@ export default function PrayerScreen() {
                 placeholder="e.g. Glasgow, Cairo, Karachi..."
                 placeholderTextColor={colors.mutedForeground}
                 value={manualInput}
-                onChangeText={setManualInput}
+                onChangeText={handleManualInputChange}
                 onSubmitEditing={handleManualSearch}
                 returnKeyType="search"
                 autoFocus
               />
+              {suggestionsLoading && (
+                <ActivityIndicator size="small" color={colors.mutedForeground} />
+              )}
+              {manualInput.length > 0 && (
+                <TouchableOpacity onPress={() => { setManualInput(""); setSuggestions([]); }}>
+                  <Ionicons name="close-circle" size={18} color={colors.mutedForeground} />
+                </TouchableOpacity>
+              )}
             </View>
+
+            {suggestions.length > 0 && (
+              <View
+                style={[
+                  styles.suggestionList,
+                  { backgroundColor: colors.background, borderColor: colors.border },
+                ]}
+              >
+                <FlatList
+                  data={suggestions}
+                  keyExtractor={(_, i) => i.toString()}
+                  scrollEnabled={false}
+                  renderItem={({ item, index }) => (
+                    <TouchableOpacity
+                      style={[
+                        styles.suggestionItem,
+                        {
+                          borderBottomColor: colors.border,
+                          borderBottomWidth: index < suggestions.length - 1
+                            ? StyleSheet.hairlineWidth
+                            : 0,
+                        },
+                      ]}
+                      onPress={() => selectSuggestion(item)}
+                    >
+                      <Ionicons name="location-outline" size={14} color={colors.accent} />
+                      <Text
+                        style={[styles.suggestionText, { color: colors.foreground }]}
+                        numberOfLines={1}
+                      >
+                        {formatSuggestionCity(item)}
+                      </Text>
+                      <Text
+                        style={[styles.suggestionCountry, { color: colors.mutedForeground }]}
+                        numberOfLines={1}
+                      >
+                        {item.address?.country ?? ""}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                />
+              </View>
+            )}
+
             <TouchableOpacity
               style={[
                 styles.searchBtn,
@@ -551,7 +645,7 @@ export default function PrayerScreen() {
                 </Text>
               )}
             </TouchableOpacity>
-          </View>
+          </Pressable>
         </Pressable>
       </Modal>
     </View>
@@ -683,6 +777,28 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontFamily: "Inter_400Regular",
     padding: 0,
+  },
+  suggestionList: {
+    borderRadius: 12,
+    borderWidth: 1,
+    overflow: "hidden",
+  },
+  suggestionItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    gap: 8,
+  },
+  suggestionText: {
+    fontSize: 14,
+    fontFamily: "Inter_500Medium",
+    flex: 1,
+  },
+  suggestionCountry: {
+    fontSize: 12,
+    fontFamily: "Inter_400Regular",
+    flexShrink: 0,
   },
   searchBtn: {
     borderRadius: 12,
