@@ -17,11 +17,39 @@ import { useColors } from "@/hooks/useColors";
 import { useBookmarks } from "@/context/BookmarkContext";
 import { getArabicFontFamily, useQuranSettings } from "@/context/QuranContext";
 import SurahCard, { SurahMeta } from "@/components/SurahCard";
+import SettingsGearButton from "@/components/SettingsGearButton";
 
 async function fetchSurahs(): Promise<SurahMeta[]> {
   const res = await fetch("https://api.alquran.cloud/v1/surah");
   const json = await res.json();
   return json.data;
+}
+
+const AL_PREFIXES = /^(al-|ash-|an-|ar-|as-|at-|az-|ad-|adh-)/i;
+
+function isArabicText(text: string): boolean {
+  return /[\u0600-\u06FF\u0750-\u077F\uFB50-\uFDFF\uFE70-\uFEFF]/.test(text);
+}
+
+function stripPrefix(name: string): string {
+  return name.toLowerCase().replace(AL_PREFIXES, "");
+}
+
+function matchesSurah(surah: SurahMeta, q: string): boolean {
+  if (!q) return true;
+  if (isArabicText(q)) {
+    return surah.name.includes(q);
+  }
+  const ql = q.toLowerCase();
+  const nameLower = surah.englishName.toLowerCase();
+  const stripped = stripPrefix(nameLower);
+  const strippedQ = stripPrefix(ql);
+  return (
+    stripped.startsWith(strippedQ) ||
+    nameLower.startsWith(ql) ||
+    surah.englishNameTranslation.toLowerCase().includes(ql) ||
+    surah.number.toString() === ql
+  );
 }
 
 export default function QuranScreen() {
@@ -40,14 +68,7 @@ export default function QuranScreen() {
     staleTime: 1000 * 60 * 60,
   });
 
-  const filtered = surahs?.filter((s) => {
-    const q = search.toLowerCase();
-    return (
-      s.englishName.toLowerCase().includes(q) ||
-      s.englishNameTranslation.toLowerCase().includes(q) ||
-      s.number.toString().includes(q)
-    );
-  });
+  const filtered = surahs?.filter((s) => matchesSurah(s, search.trim()));
 
   const topPad = Platform.OS === "web" ? 20 : insets.top;
 
@@ -72,14 +93,17 @@ export default function QuranScreen() {
               114 Surahs · 6,236 Ayahs
             </Text>
           </View>
-          <Text
-            style={[
-              styles.headerArabic,
-              { color: colors.primary, fontFamily: arabicFont },
-            ]}
-          >
-            القرآن الكريم
-          </Text>
+          <View style={styles.titleRight}>
+            <Text
+              style={[
+                styles.headerArabic,
+                { color: colors.primary, fontFamily: arabicFont },
+              ]}
+            >
+              القرآن الكريم
+            </Text>
+            <SettingsGearButton />
+          </View>
         </View>
 
         <View
@@ -91,7 +115,7 @@ export default function QuranScreen() {
           <Ionicons name="search" size={18} color={colors.mutedForeground} />
           <TextInput
             style={[styles.searchInput, { color: colors.foreground }]}
-            placeholder="Search surah by name or number..."
+            placeholder="Search by name, number, or Arabic..."
             placeholderTextColor={colors.mutedForeground}
             value={search}
             onChangeText={setSearch}
@@ -230,6 +254,12 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   titleLeft: { flex: 1 },
+  titleRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    flexShrink: 0,
+  },
   headerTitle: {
     fontSize: 22,
     fontFamily: "Inter_700Bold",
@@ -245,7 +275,6 @@ const styles = StyleSheet.create({
     textAlign: "right",
     writingDirection: "rtl",
     lineHeight: 36,
-    flexShrink: 1,
   },
   searchBar: {
     flexDirection: "row",

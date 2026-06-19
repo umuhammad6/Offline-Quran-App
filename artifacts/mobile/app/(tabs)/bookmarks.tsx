@@ -1,5 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
+import SettingsGearButton from "@/components/SettingsGearButton";
 import React from "react";
 import {
   Alert,
@@ -73,6 +74,7 @@ export default function BookmarksScreen() {
         <Text style={[styles.title, { color: colors.foreground }]}>
           Bookmarks
         </Text>
+        <View style={{ flex: 1 }} />
         {bookmarks.length > 0 && (
           <View
             style={[styles.countBadge, { backgroundColor: colors.primary }]}
@@ -84,6 +86,7 @@ export default function BookmarksScreen() {
             </Text>
           </View>
         )}
+        <SettingsGearButton />
       </View>
 
       {bookmarks.length === 0 ? (

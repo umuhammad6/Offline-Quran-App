@@ -48,6 +48,7 @@ interface TajweedTextProps {
   fontFamily?: string;
   color: string;
   style?: TextStyle;
+  suffix?: React.ReactNode;
 }
 
 export default function TajweedText({
@@ -56,6 +57,7 @@ export default function TajweedText({
   fontFamily,
   color,
   style,
+  suffix,
 }: TajweedTextProps) {
   const { isRuleEnabled } = useContext(TajweedContext);
   const spans = parseTajweedBracket(text);
@@ -84,6 +86,7 @@ export default function TajweedText({
           </Text>
         );
       })}
+      {suffix}
     </Text>
   );
 }

@@ -15,6 +15,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
 import { getArabicFontFamily, useQuranSettings } from "@/context/QuranContext";
+import SettingsGearButton from "@/components/SettingsGearButton";
 
 interface SearchMatch {
   number: number;
@@ -66,6 +67,10 @@ function HighlightedText({
   );
 }
 
+function isArabicText(text: string): boolean {
+  return /[\u0600-\u06FF\u0750-\u077F\uFB50-\uFDFF\uFE70-\uFEFF]/.test(text);
+}
+
 export default function SearchScreen() {
   const colors = useColors();
   const router = useRouter();
@@ -77,6 +82,8 @@ export default function SearchScreen() {
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
   const [error, setError] = useState(false);
+  const [searchedQuery, setSearchedQuery] = useState("");
+  const [isArabicSearch, setIsArabicSearch] = useState(false);
   const inputRef = useRef<TextInput>(null);
 
   const doSearch = async (q = query) => {
@@ -84,11 +91,17 @@ export default function SearchScreen() {
     setLoading(true);
     setError(false);
     setSearched(true);
+    setSearchedQuery(q.trim());
     Keyboard.dismiss();
+
+    const arabic = isArabicText(q.trim());
+    setIsArabicSearch(arabic);
+
+    const edition = arabic ? "ar" : "en.sahih";
     try {
       const term = encodeURIComponent(q.trim());
       const res = await fetch(
-        `https://api.alquran.cloud/v1/search/${term}/all/en.sahih`
+        `https://api.alquran.cloud/v1/search/${term}/all/${edition}`
       );
       const json = await res.json();
       if (json.code === 200 && json.data?.matches) {
@@ -127,9 +140,13 @@ export default function SearchScreen() {
           },
         ]}
       >
-        <Text style={[styles.headerTitle, { color: colors.foreground }]}>
-          Search
-        </Text>
+        <View style={styles.headerTitleRow}>
+          <Text style={[styles.headerTitle, { color: colors.foreground }]}>
+            Search
+          </Text>
+          <SettingsGearButton />
+        </View>
+
         <View
           style={[
             styles.searchBar,
@@ -143,7 +160,7 @@ export default function SearchScreen() {
           <TextInput
             ref={inputRef}
             style={[styles.searchInput, { color: colors.foreground }]}
-            placeholder="Search translations..."
+            placeholder="Search in English or Arabic..."
             placeholderTextColor={colors.mutedForeground}
             value={query}
             onChangeText={setQuery}
@@ -161,6 +178,7 @@ export default function SearchScreen() {
             </TouchableOpacity>
           )}
         </View>
+
         <TouchableOpacity
           style={[
             styles.searchBtn,
@@ -220,12 +238,17 @@ export default function SearchScreen() {
             color={colors.mutedForeground}
           />
           <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>
-            Search the Quran translation
+            Search the Quran
           </Text>
           <Text
             style={[styles.emptySubText, { color: colors.mutedForeground }]}
           >
-            Try words like "mercy", "patience", "guidance"
+            Search in English: "mercy", "patience", "guidance"
+          </Text>
+          <Text
+            style={[styles.emptySubText, { color: colors.mutedForeground }]}
+          >
+            Or type Arabic text to search the original Quran
           </Text>
         </View>
       )}
@@ -238,7 +261,7 @@ export default function SearchScreen() {
             color={colors.mutedForeground}
           />
           <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>
-            No results for "{query}"
+            No results for "{searchedQuery}"
           </Text>
           <Text
             style={[styles.emptySubText, { color: colors.mutedForeground }]}
@@ -254,12 +277,26 @@ export default function SearchScreen() {
           keyExtractor={(item) => item.number.toString()}
           keyboardShouldPersistTaps="handled"
           ListHeaderComponent={
-            <Text
-              style={[styles.resultsCount, { color: colors.mutedForeground }]}
-            >
-              {matches.length} result{matches.length !== 1 ? "s" : ""} for "
-              {query}"
-            </Text>
+            <View style={styles.resultsHeader}>
+              <Text
+                style={[styles.resultsCount, { color: colors.mutedForeground }]}
+              >
+                {matches.length} result{matches.length !== 1 ? "s" : ""} for "
+                {searchedQuery}"
+              </Text>
+              {isArabicSearch && (
+                <View
+                  style={[
+                    styles.arabicBadge,
+                    { backgroundColor: colors.accent + "22", borderColor: colors.accent },
+                  ]}
+                >
+                  <Text style={[styles.arabicBadgeText, { color: colors.accent }]}>
+                    Arabic Search
+                  </Text>
+                </View>
+              )}
+            </View>
           }
           renderItem={({ item }) => (
             <TouchableOpacity
@@ -307,12 +344,27 @@ export default function SearchScreen() {
                   {item.surah.name}
                 </Text>
               </View>
-              <HighlightedText
-                text={item.text}
-                query={query}
-                highlightBg={highlightBg}
-                style={[styles.resultText, { color: colors.mutedForeground }]}
-              />
+              {isArabicSearch ? (
+                <Text
+                  style={[
+                    styles.resultArabic,
+                    {
+                      color: colors.foreground,
+                      fontFamily: arabicFont,
+                      fontSize: 18,
+                    },
+                  ]}
+                >
+                  {item.text}
+                </Text>
+              ) : (
+                <HighlightedText
+                  text={item.text}
+                  query={searchedQuery}
+                  highlightBg={highlightBg}
+                  style={[styles.resultText, { color: colors.mutedForeground }]}
+                />
+              )}
             </TouchableOpacity>
           )}
           contentContainerStyle={{
@@ -332,6 +384,11 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
     borderBottomWidth: 1,
     gap: 10,
+  },
+  headerTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
   },
   headerTitle: { fontSize: 26, fontFamily: "Inter_700Bold" },
   searchBar: {
@@ -375,12 +432,25 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   retryText: { fontSize: 14, fontFamily: "Inter_600SemiBold" },
+  resultsHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    flexWrap: "wrap",
+  },
   resultsCount: {
     fontSize: 13,
     fontFamily: "Inter_400Regular",
-    paddingHorizontal: 16,
-    paddingVertical: 10,
   },
+  arabicBadge: {
+    borderRadius: 6,
+    borderWidth: 1,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  arabicBadgeText: { fontSize: 11, fontFamily: "Inter_600SemiBold" },
   resultCard: {
     marginHorizontal: 16,
     marginVertical: 4,
@@ -398,5 +468,10 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontFamily: "Inter_400Regular",
     lineHeight: 22,
+  },
+  resultArabic: {
+    textAlign: "right",
+    writingDirection: "rtl",
+    lineHeight: 36,
   },
 });

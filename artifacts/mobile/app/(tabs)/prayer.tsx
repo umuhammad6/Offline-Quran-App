@@ -5,6 +5,7 @@ import React, { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Animated,
   FlatList,
   Modal,
   Platform,
@@ -17,6 +18,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import SettingsGearButton from "@/components/SettingsGearButton";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
 import {
@@ -83,13 +85,39 @@ function getNextPrayer(times: PrayerTimes): string {
   return "Fajr";
 }
 
+interface CalcMethod {
+  method: number;
+  name: string;
+}
+
+function getCalcMethod(lat: number, lng: number): CalcMethod {
+  if (lat >= 15 && lat <= 83 && lng >= -170 && lng <= -52)
+    return { method: 2, name: "ISNA (North America)" };
+  if (lat >= 12 && lat <= 32 && lng >= 32 && lng <= 60)
+    return { method: 4, name: "Umm Al-Qura, Mecca" };
+  if (lat >= 25 && lat <= 40 && lng >= 44 && lng <= 64)
+    return { method: 7, name: "Geophysics Institute, Tehran" };
+  if (lat >= 6 && lat <= 38 && lng >= 60 && lng <= 98)
+    return { method: 1, name: "University of Islamic Sciences, Karachi" };
+  if (lat >= -10 && lat <= 25 && lng >= 95 && lng <= 141)
+    return { method: 11, name: "MUIS (Singapore)" };
+  if (lat >= 36 && lat <= 42 && lng >= 26 && lng <= 45)
+    return { method: 13, name: "Diyanet İşleri Başkanlığı" };
+  if (lat >= 20 && lat <= 35 && lng >= 15 && lng <= 38)
+    return { method: 5, name: "Egyptian General Authority" };
+  if (lat >= 27 && lat <= 36 && lng >= -17 && lng <= -1)
+    return { method: 17, name: "Morocco" };
+  return { method: 3, name: "Muslim World League" };
+}
+
 async function fetchPrayerTimesForCoords(
   lat: number,
-  lng: number
+  lng: number,
+  method: number
 ): Promise<PrayerTimes> {
   const timestamp = Math.floor(Date.now() / 1000);
   const res = await fetch(
-    `https://api.aladhan.com/v1/timings/${timestamp}?latitude=${lat}&longitude=${lng}&method=3`
+    `https://api.aladhan.com/v1/timings/${timestamp}?latitude=${lat}&longitude=${lng}&method=${method}`
   );
   const json = await res.json();
   return json.data.timings as PrayerTimes;
@@ -111,6 +139,7 @@ export default function PrayerScreen() {
   const [error, setError] = useState<string | null>(null);
   const [prayerTimes, setPrayerTimes] = useState<PrayerTimes | null>(null);
   const [city, setCity] = useState<string>("");
+  const [calcMethodName, setCalcMethodName] = useState<string>("Muslim World League");
   const [nextPrayer, setNextPrayer] = useState<string>("");
   const [notifsEnabled, setNotifsEnabled] = useState(false);
   const [showManualModal, setShowManualModal] = useState(false);
@@ -118,7 +147,18 @@ export default function PrayerScreen() {
   const [manualLoading, setManualLoading] = useState(false);
   const [suggestions, setSuggestions] = useState<NominatimResult[]>([]);
   const [suggestionsLoading, setSuggestionsLoading] = useState(false);
+  const [webToast, setWebToast] = useState<string | null>(null);
+  const webToastAnim = useRef(new Animated.Value(0)).current;
   const autocompleteTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const showWebToast = (msg: string) => {
+    setWebToast(msg);
+    Animated.sequence([
+      Animated.timing(webToastAnim, { toValue: 1, duration: 200, useNativeDriver: true }),
+      Animated.delay(1600),
+      Animated.timing(webToastAnim, { toValue: 0, duration: 200, useNativeDriver: true }),
+    ]).start(() => setWebToast(null));
+  };
 
   const topPad = Platform.OS === "web" ? 20 : insets.top;
   const bottomPad = Platform.OS === "web" ? 84 + 34 : 100;
@@ -198,9 +238,11 @@ export default function PrayerScreen() {
     setLoading(true);
     setError(null);
     try {
-      const times = await fetchPrayerTimesForCoords(lat, lng);
+      const { method, name: methodName } = getCalcMethod(lat, lng);
+      const times = await fetchPrayerTimesForCoords(lat, lng, method);
       setPrayerTimes(times);
       setCity(cityName);
+      setCalcMethodName(methodName);
       setNextPrayer(getNextPrayer(times));
 
       const notifOn = (await AsyncStorage.getItem(NOTIF_PREF_KEY)) === "true";
@@ -293,7 +335,7 @@ export default function PrayerScreen() {
 
   const toggleNotifications = async (val: boolean) => {
     if (Platform.OS === "web") {
-      Alert.alert("Not available", "Notifications require the mobile app.");
+      showWebToast("Prayer reminders require the mobile app");
       return;
     }
     if (val) {
@@ -371,6 +413,7 @@ export default function PrayerScreen() {
             >
               <Ionicons name="refresh" size={18} color={colors.primary} />
             </TouchableOpacity>
+            <SettingsGearButton />
           </View>
         </View>
 
@@ -511,12 +554,31 @@ export default function PrayerScreen() {
             </View>
 
             <Text style={[styles.disclaimer, { color: colors.mutedForeground }]}>
-              Times calculated using the Muslim World League method. Verify
-              with your local mosque for Friday prayers.
+              Times calculated using {calcMethodName}. Verify with your local
+              mosque for Friday prayers.
             </Text>
           </>
         )}
       </ScrollView>
+
+      {webToast && (
+        <Animated.View
+          style={[
+            styles.webToast,
+            {
+              backgroundColor: colors.foreground,
+              opacity: webToastAnim,
+              transform: [{ translateY: webToastAnim.interpolate({ inputRange: [0, 1], outputRange: [20, 0] }) }],
+            },
+          ]}
+          pointerEvents="none"
+        >
+          <Ionicons name="information-circle" size={16} color={colors.background} />
+          <Text style={[styles.webToastText, { color: colors.background }]}>
+            {webToast}
+          </Text>
+        </Animated.View>
+      )}
 
       <Modal
         visible={showManualModal}
@@ -740,6 +802,28 @@ const styles = StyleSheet.create({
     fontFamily: "Inter_400Regular",
     textAlign: "center",
     lineHeight: 18,
+  },
+  webToast: {
+    position: "absolute",
+    bottom: 100,
+    left: 20,
+    right: 20,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  webToastText: {
+    fontSize: 14,
+    fontFamily: "Inter_500Medium",
+    flex: 1,
   },
   modalOverlay: {
     flex: 1,

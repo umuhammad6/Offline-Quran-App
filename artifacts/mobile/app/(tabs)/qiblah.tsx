@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as Location from "expo-location";
 import { Magnetometer } from "expo-sensors";
+import SettingsGearButton from "@/components/SettingsGearButton";
 import React, { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -353,9 +354,12 @@ export default function QiblahScreen() {
         <Text style={[styles.title, { color: colors.foreground }]}>
           Qiblah
         </Text>
-        <TouchableOpacity onPress={getLocation}>
-          <Ionicons name="refresh" size={22} color={colors.primary} />
-        </TouchableOpacity>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 14 }}>
+          <TouchableOpacity onPress={getLocation}>
+            <Ionicons name="refresh" size={22} color={colors.primary} />
+          </TouchableOpacity>
+          <SettingsGearButton />
+        </View>
       </View>
 
       <View style={styles.content}>

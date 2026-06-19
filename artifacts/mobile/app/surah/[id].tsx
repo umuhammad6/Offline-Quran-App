@@ -1,11 +1,17 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useQuery } from "@tanstack/react-query";
-import { useLocalSearchParams, useNavigation } from "expo-router";
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useLocalSearchParams, useNavigation, useRouter } from "expo-router";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   ActivityIndicator,
   Alert,
-  FlatList,
+  Animated,
   Modal,
   Platform,
   Pressable,
@@ -16,7 +22,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
 import { useColors } from "@/hooks/useColors";
@@ -24,6 +30,7 @@ import {
   getArabicEdition,
   getArabicFontFamily,
   useQuranSettings,
+  type QuranSettings,
 } from "@/context/QuranContext";
 import { useBookmarks } from "@/context/BookmarkContext";
 import { AyahData } from "@/components/AyahItem";
@@ -71,6 +78,7 @@ async function fetchAyahTafseer(
 }
 
 const BISMILLAH = "بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ";
+const MAX_SCROLL_RETRIES = 40;
 
 export default function SurahScreen() {
   const { id, scrollToAyah, forceCardMode } = useLocalSearchParams<{
@@ -79,8 +87,8 @@ export default function SurahScreen() {
     forceCardMode?: string;
   }>();
   const colors = useColors();
-  const insets = useSafeAreaInsets();
   const navigation = useNavigation();
+  const router = useRouter();
   const { settings } = useQuranSettings();
   const { addBookmark, removeBookmark, isBookmarked, setLastRead, bookmarks } =
     useBookmarks();
@@ -91,11 +99,14 @@ export default function SurahScreen() {
     ? "quran-tajweed"
     : getArabicEdition(settings.fontType);
 
-  const effectiveContinuous = settings.continuousMode && forceCardMode !== "true";
+  const effectiveContinuous =
+    settings.continuousMode && forceCardMode !== "true";
 
-  const flatRef = useRef<FlatList>(null);
   const scrollRef = useRef<ScrollView>(null);
   const ayahPositions = useRef<Map<number, number>>(new Map());
+  const scrollRetryRef = useRef(0);
+  const highlightAnim = useRef(new Animated.Value(0)).current;
+  const [highlightedAyah, setHighlightedAyah] = useState<number | null>(null);
 
   const [actionAyah, setActionAyah] = useState<AyahData | null>(null);
   const [tafseerCache, setTafseerCache] = useState<Map<number, string | null>>(
@@ -117,7 +128,7 @@ export default function SurahScreen() {
   const { data: translationData } = useQuery({
     queryKey: ["surah-translation", surahId, settings.translationEdition],
     queryFn: () => fetchSurahEdition(surahId, settings.translationEdition),
-    enabled: settings.showTranslation,
+    enabled: settings.showTranslation && !effectiveContinuous,
     staleTime: 1000 * 60 * 60,
   });
 
@@ -141,32 +152,49 @@ export default function SurahScreen() {
     }
   }, [arabicData, fontFamily, colors.accent]);
 
+  const flashHighlight = useCallback(
+    (ayahNum: number) => {
+      setHighlightedAyah(ayahNum);
+      highlightAnim.setValue(0);
+      Animated.sequence([
+        Animated.timing(highlightAnim, {
+          toValue: 1,
+          duration: 150,
+          useNativeDriver: false,
+        }),
+        Animated.delay(500),
+        Animated.timing(highlightAnim, {
+          toValue: 0,
+          duration: 400,
+          useNativeDriver: false,
+        }),
+      ]).start(() => setHighlightedAyah(null));
+    },
+    [highlightAnim]
+  );
+
+  const doScrollToAyah = useCallback(
+    (ayahNum: number) => {
+      const y = ayahPositions.current.get(ayahNum);
+      if (y !== undefined) {
+        scrollRetryRef.current = 0;
+        scrollRef.current?.scrollTo({ y: Math.max(0, y - 80), animated: true });
+        setTimeout(() => flashHighlight(ayahNum), 400);
+      } else if (scrollRetryRef.current < MAX_SCROLL_RETRIES) {
+        scrollRetryRef.current++;
+        setTimeout(() => doScrollToAyah(ayahNum), 150);
+      }
+    },
+    [flashHighlight]
+  );
+
   useEffect(() => {
     if (!arabicData || !scrollToAyah) return;
-    const ayahNum = Number(scrollToAyah);
-
-    if (!effectiveContinuous) {
-      const index = arabicData.ayahs.findIndex(
-        (a) => a.numberInSurah === ayahNum
-      );
-      if (index !== -1) {
-        setTimeout(() => {
-          flatRef.current?.scrollToIndex({
-            index,
-            animated: true,
-            viewPosition: 0.1,
-          });
-        }, 800);
-      }
-    } else {
-      setTimeout(() => {
-        const y = ayahPositions.current.get(ayahNum);
-        if (y !== undefined) {
-          scrollRef.current?.scrollTo({ y: Math.max(0, y - 60), animated: true });
-        }
-      }, 800);
-    }
-  }, [arabicData, scrollToAyah, effectiveContinuous]);
+    scrollRetryRef.current = 0;
+    ayahPositions.current.clear();
+    const target = Number(scrollToAyah);
+    setTimeout(() => doScrollToAyah(target), 400);
+  }, [arabicData, scrollToAyah]);
 
   const ayahs: AyahData[] = useMemo(
     () =>
@@ -184,11 +212,7 @@ export default function SurahScreen() {
 
   const loadTafseer = useCallback(
     async (ayahNum: number) => {
-      if (
-        tafseerCache.has(ayahNum) ||
-        loadingTafseers.has(ayahNum)
-      )
-        return;
+      if (tafseerCache.has(ayahNum) || loadingTafseers.has(ayahNum)) return;
       setLoadingTafseers((prev) => new Set([...prev, ayahNum]));
       try {
         const text = await fetchAyahTafseer(
@@ -196,7 +220,9 @@ export default function SurahScreen() {
           ayahNum,
           settings.tafseerSource
         );
-        setTafseerCache((prev) => new Map([...prev, [ayahNum, text || null]]));
+        setTafseerCache(
+          (prev) => new Map([...prev, [ayahNum, text || null]])
+        );
       } catch {
         setTafseerCache((prev) => new Map([...prev, [ayahNum, null]]));
       } finally {
@@ -237,8 +263,7 @@ export default function SurahScreen() {
         ? stripTajweedTags(ayah.text)
         : ayah.text;
       const lines = [arabic];
-      if (ayah.translation)
-        lines.push(`\n"${ayah.translation}"`);
+      if (ayah.translation) lines.push(`\n"${ayah.translation}"`);
       lines.push(
         `\n— ${ayah.surahEnglishName} (${ayah.surahName}), Ayah ${ayah.numberInSurah}`
       );
@@ -268,25 +293,44 @@ export default function SurahScreen() {
 
   const showBismillah = surahId !== 1 && surahId !== 9;
 
+  const highlightBg = highlightAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ["transparent", colors.primary + "28"],
+  });
+
+  const swipeGesture = Gesture.Pan()
+    .runOnJS(true)
+    .activeOffsetX([-40, 40])
+    .failOffsetY([-25, 25])
+    .onEnd((e) => {
+      if (e.translationX < -80 && e.velocityX < -100 && surahId < 114) {
+        router.replace({
+          pathname: "/surah/[id]",
+          params: { id: (surahId + 1).toString() },
+        });
+      } else if (e.translationX > 80 && e.velocityX > 100 && surahId > 1) {
+        router.replace({
+          pathname: "/surah/[id]",
+          params: { id: (surahId - 1).toString() },
+        });
+      }
+    });
+
   if (arabicLoading) {
     return (
-      <View
-        style={[
-          styles.center,
-          { backgroundColor: colors.background, flex: 1 },
-        ]}
-      >
+      <View style={[styles.center, { backgroundColor: colors.background, flex: 1 }]}>
         <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
   }
 
   const surahHeader = arabicData ? (
-    <View
-      style={[styles.surahInfoCard, { backgroundColor: colors.primary }]}
-    >
+    <View style={[styles.surahInfoCard, { backgroundColor: colors.primary }]}>
       <Text
-        style={[styles.surahInfoArabic, { color: colors.primaryForeground, fontFamily }]}
+        style={[
+          styles.surahInfoArabic,
+          { color: colors.primaryForeground, fontFamily },
+        ]}
       >
         {arabicData.name}
       </Text>
@@ -337,496 +381,647 @@ export default function SurahScreen() {
     </View>
   ) : null;
 
+  const swipeHint =
+    surahId > 1 || surahId < 114 ? (
+      <View
+        style={[
+          styles.swipeHint,
+          { backgroundColor: colors.card, borderColor: colors.border },
+        ]}
+      >
+        <Ionicons name="chevron-back" size={13} color={colors.mutedForeground} />
+        <Text style={[styles.swipeHintText, { color: colors.mutedForeground }]}>
+          Swipe to navigate between surahs
+        </Text>
+        <Ionicons
+          name="chevron-forward"
+          size={13}
+          color={colors.mutedForeground}
+        />
+      </View>
+    ) : null;
+
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {effectiveContinuous ? (
+    <GestureDetector gesture={swipeGesture}>
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
         <ScrollView
           ref={scrollRef}
           contentContainerStyle={{
             paddingBottom: Platform.OS === "web" ? 84 + 34 : 100,
           }}
           showsVerticalScrollIndicator={false}
+          scrollEventThrottle={16}
         >
           {surahHeader}
           {bismillahBlock}
 
-          <View style={[styles.contHint, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Ionicons name="hand-left-outline" size={13} color={colors.mutedForeground} />
-            <Text style={[styles.contHintText, { color: colors.mutedForeground }]}>
-              Tap any ayah for share, copy, bookmark & more
-            </Text>
-          </View>
-
-          {ayahs.map((ayah) => {
-            const bookmarked = isBookmarked(ayah.surahNumber, ayah.numberInSurah);
-            return (
-              <Pressable
-                key={ayah.numberInSurah}
-                onPress={() => handleTap(ayah)}
-                onLayout={(e) => {
-                  ayahPositions.current.set(
-                    ayah.numberInSurah,
-                    e.nativeEvent.layout.y
-                  );
-                }}
-                style={({ pressed }) => [
-                  styles.contAyah,
+          {effectiveContinuous ? (
+            <>
+              <View
+                style={[
+                  styles.contModeHint,
                   {
-                    backgroundColor: pressed ? colors.secondary : "transparent",
-                    borderBottomColor: colors.border,
-                  },
-                ]}
-              >
-                <View style={styles.contAyahMeta}>
-                  <View style={[styles.contAyahBadge, { borderColor: colors.accent }]}>
-                    <Text style={[styles.contAyahNum, { color: colors.accent }]}>
-                      {ayah.numberInSurah}
-                    </Text>
-                  </View>
-                  {bookmarked && (
-                    <Ionicons name="bookmark" size={12} color={colors.accent} />
-                  )}
-                </View>
-
-                {settings.showTajweed ? (
-                  <TajweedText
-                    text={ayah.text}
-                    fontSize={settings.arabicFontSize}
-                    fontFamily={fontFamily}
-                    color={colors.foreground}
-                  />
-                ) : (
-                  <Text
-                    style={{
-                      fontFamily,
-                      fontSize: settings.arabicFontSize,
-                      color: colors.foreground,
-                      textAlign: "right",
-                      writingDirection: "rtl",
-                      lineHeight: settings.arabicFontSize * 2.2,
-                    }}
-                  >
-                    {ayah.text}
-                    <Text
-                      style={{
-                        color: colors.accent,
-                        fontSize: settings.arabicFontSize * 0.72,
-                      }}
-                    >
-                      {" "}﴿{ayah.numberInSurah}﴾
-                    </Text>
-                  </Text>
-                )}
-
-                {settings.showTranslation && ayah.translation ? (
-                  <Text
-                    style={[
-                      styles.contTranslation,
-                      {
-                        color: colors.mutedForeground,
-                        fontSize: settings.translationFontSize,
-                        lineHeight: settings.translationFontSize * 1.7,
-                        borderTopColor: colors.border,
-                      },
-                    ]}
-                  >
-                    <Text style={{ color: colors.accent, fontFamily: "Inter_600SemiBold" }}>
-                      {ayah.numberInSurah}.{" "}
-                    </Text>
-                    {ayah.translation}
-                  </Text>
-                ) : null}
-              </Pressable>
-            );
-          })}
-        </ScrollView>
-      ) : (
-        <FlatList
-          ref={flatRef}
-          data={ayahs}
-          keyExtractor={(a) => a.numberInSurah.toString()}
-          contentInsetAdjustmentBehavior="automatic"
-          windowSize={5}
-          maxToRenderPerBatch={8}
-          initialNumToRender={6}
-          removeClippedSubviews={Platform.OS !== "web"}
-          ListHeaderComponent={
-            <View style={styles.listHeader}>
-              {surahHeader}
-              {bismillahBlock}
-            </View>
-          }
-          renderItem={({ item: ayah }) => {
-            const bookmarked = isBookmarked(ayah.surahNumber, ayah.numberInSurah);
-            const tafseerExpanded = expandedTafseers.has(ayah.numberInSurah);
-            const tafseerText = tafseerCache.get(ayah.numberInSurah) ?? null;
-            const tafseerLoading = loadingTafseers.has(ayah.numberInSurah);
-
-            return (
-              <Pressable
-                onPress={() => handleTap(ayah)}
-                style={({ pressed }) => [
-                  styles.ayahCard,
-                  {
-                    backgroundColor: pressed ? colors.secondary : colors.card,
+                    backgroundColor: colors.card,
                     borderColor: colors.border,
                   },
                 ]}
               >
-                <View style={styles.ayahHeader}>
-                  <View
-                    style={[styles.ayahBadge, { borderColor: colors.accent }]}
-                  >
-                    <Text
-                      style={[styles.ayahNumber, { color: colors.accent }]}
-                    >
-                      {ayah.numberInSurah}
-                    </Text>
-                  </View>
-                  <View style={styles.ayahHeaderRight}>
-                    {bookmarked && (
-                      <Ionicons
-                        name="bookmark"
-                        size={16}
-                        color={colors.accent}
-                      />
-                    )}
-                  </View>
-                </View>
+                <Ionicons
+                  name="hand-left-outline"
+                  size={13}
+                  color={colors.mutedForeground}
+                />
+                <Text
+                  style={[
+                    styles.contHintText,
+                    { color: colors.mutedForeground },
+                  ]}
+                >
+                  Continuous mode — tap any ayah for options
+                </Text>
+              </View>
 
-                {settings.showTajweed ? (
-                  <TajweedText
-                    text={ayah.text}
-                    fontSize={settings.arabicFontSize}
-                    fontFamily={fontFamily}
-                    color={colors.foreground}
-                  />
-                ) : (
-                  <Text
-                    style={[
-                      styles.arabicText,
+              <View style={styles.pageContainer}>
+                {ayahs.map((ayah) => {
+                  const isHighlighted = highlightedAyah === ayah.numberInSurah;
+                  const bookmarked = isBookmarked(
+                    ayah.surahNumber,
+                    ayah.numberInSurah
+                  );
+                  return (
+                    <Pressable
+                      key={ayah.numberInSurah}
+                      onPress={() => handleTap(ayah)}
+                      onLayout={(e) => {
+                        ayahPositions.current.set(
+                          ayah.numberInSurah,
+                          e.nativeEvent.layout.y +
+                            (e.nativeEvent.layout.height === 0
+                              ? 0
+                              : 0)
+                        );
+                      }}
+                    >
+                      {isHighlighted ? (
+                        <Animated.View
+                          style={[
+                            styles.pageAyah,
+                            { backgroundColor: highlightBg },
+                          ]}
+                        >
+                          <PageAyahContent
+                            ayah={ayah}
+                            bookmarked={bookmarked}
+                            settings={settings}
+                            fontFamily={fontFamily}
+                            accentColor={colors.accent}
+                            foregroundColor={colors.foreground}
+                          />
+                        </Animated.View>
+                      ) : (
+                        <View style={styles.pageAyah}>
+                          <PageAyahContent
+                            ayah={ayah}
+                            bookmarked={bookmarked}
+                            settings={settings}
+                            fontFamily={fontFamily}
+                            accentColor={colors.accent}
+                            foregroundColor={colors.foreground}
+                          />
+                        </View>
+                      )}
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </>
+          ) : (
+            <>
+              {swipeHint}
+              <View
+                style={[
+                  styles.tapHint,
+                  { backgroundColor: colors.card, borderColor: colors.border },
+                ]}
+              >
+                <Ionicons
+                  name="hand-left-outline"
+                  size={13}
+                  color={colors.mutedForeground}
+                />
+                <Text
+                  style={[
+                    styles.contHintText,
+                    { color: colors.mutedForeground },
+                  ]}
+                >
+                  Tap any ayah for share, copy, bookmark & more
+                </Text>
+              </View>
+              {ayahs.map((ayah) => {
+                const bookmarked = isBookmarked(
+                  ayah.surahNumber,
+                  ayah.numberInSurah
+                );
+                const tafseerExpanded = expandedTafseers.has(
+                  ayah.numberInSurah
+                );
+                const tafseerText =
+                  tafseerCache.get(ayah.numberInSurah) ?? null;
+                const tafseerLoading = loadingTafseers.has(
+                  ayah.numberInSurah
+                );
+                const isHighlighted = highlightedAyah === ayah.numberInSurah;
+
+                const cardContent = (
+                  <Pressable
+                    onPress={() => handleTap(ayah)}
+                    onLayout={(e) => {
+                      ayahPositions.current.set(
+                        ayah.numberInSurah,
+                        e.nativeEvent.layout.y
+                      );
+                    }}
+                    style={({ pressed }) => [
+                      styles.ayahCard,
                       {
-                        color: colors.foreground,
-                        fontSize: settings.arabicFontSize,
-                        fontFamily,
-                        lineHeight: settings.arabicFontSize * 2,
+                        backgroundColor: pressed
+                          ? colors.secondary
+                          : colors.card,
+                        borderColor: colors.border,
                       },
                     ]}
                   >
-                    {ayah.text}
-                  </Text>
-                )}
-
-                {settings.showTranslation && ayah.translation ? (
-                  <Text
-                    style={[
-                      styles.translation,
-                      {
-                        color: colors.mutedForeground,
-                        fontSize: settings.translationFontSize,
-                        lineHeight: settings.translationFontSize * 1.7,
-                      },
-                    ]}
-                  >
-                    {ayah.translation}
-                  </Text>
-                ) : null}
-
-                {settings.showTafseer && (
-                  <View>
-                    <TouchableOpacity
-                      style={styles.tafseerToggle}
-                      onPress={() => toggleTafseer(ayah.numberInSurah)}
-                    >
-                      <Text
-                        style={[styles.tafseerLabel, { color: colors.primary }]}
-                      >
-                        Tafseer
-                      </Text>
-                      <Ionicons
-                        name={tafseerExpanded ? "chevron-up" : "chevron-down"}
-                        size={14}
-                        color={colors.primary}
-                      />
-                    </TouchableOpacity>
-                    {tafseerExpanded && (
+                    <View style={styles.ayahHeader}>
                       <View
                         style={[
-                          styles.tafseerBlock,
-                          { borderLeftColor: colors.primary },
+                          styles.ayahBadge,
+                          { borderColor: colors.accent },
                         ]}
                       >
-                        {tafseerLoading ? (
-                          <ActivityIndicator
-                            size="small"
+                        <Text
+                          style={[styles.ayahNumber, { color: colors.accent }]}
+                        >
+                          {ayah.numberInSurah}
+                        </Text>
+                      </View>
+                      <View style={styles.ayahHeaderRight}>
+                        {bookmarked && (
+                          <Ionicons
+                            name="bookmark"
+                            size={16}
+                            color={colors.accent}
+                          />
+                        )}
+                      </View>
+                    </View>
+
+                    {settings.showTajweed ? (
+                      <TajweedText
+                        text={ayah.text}
+                        fontSize={settings.arabicFontSize}
+                        fontFamily={fontFamily}
+                        color={colors.foreground}
+                      />
+                    ) : (
+                      <Text
+                        style={[
+                          styles.arabicText,
+                          {
+                            color: colors.foreground,
+                            fontSize: settings.arabicFontSize,
+                            fontFamily,
+                            lineHeight: settings.arabicFontSize * 2,
+                          },
+                        ]}
+                      >
+                        {ayah.text}
+                      </Text>
+                    )}
+
+                    {settings.showTranslation && ayah.translation ? (
+                      <Text
+                        style={[
+                          styles.translation,
+                          {
+                            color: colors.mutedForeground,
+                            fontSize: settings.translationFontSize,
+                            lineHeight: settings.translationFontSize * 1.7,
+                          },
+                        ]}
+                      >
+                        {ayah.translation}
+                      </Text>
+                    ) : null}
+
+                    {settings.showTafseer && (
+                      <View>
+                        <TouchableOpacity
+                          style={styles.tafseerToggle}
+                          onPress={() => toggleTafseer(ayah.numberInSurah)}
+                        >
+                          <Text
+                            style={[
+                              styles.tafseerLabel,
+                              { color: colors.primary },
+                            ]}
+                          >
+                            Tafseer
+                          </Text>
+                          <Ionicons
+                            name={
+                              tafseerExpanded ? "chevron-up" : "chevron-down"
+                            }
+                            size={14}
                             color={colors.primary}
                           />
-                        ) : tafseerText ? (
-                          <Text
+                        </TouchableOpacity>
+                        {tafseerExpanded && (
+                          <View
                             style={[
-                              styles.tafseerText,
-                              {
-                                color: colors.mutedForeground,
-                                fontSize: settings.tafseerFontSize,
-                                lineHeight: settings.tafseerFontSize * 1.75,
-                              },
+                              styles.tafseerBlock,
+                              { borderLeftColor: colors.primary },
                             ]}
                           >
-                            {tafseerText}
-                          </Text>
-                        ) : (
-                          <Text
-                            style={[
-                              styles.tafseerText,
-                              { color: colors.mutedForeground },
-                            ]}
-                          >
-                            Tafseer not available for this ayah.
-                          </Text>
+                            {tafseerLoading ? (
+                              <ActivityIndicator
+                                size="small"
+                                color={colors.primary}
+                              />
+                            ) : tafseerText ? (
+                              <Text
+                                style={[
+                                  styles.tafseerText,
+                                  {
+                                    color: colors.mutedForeground,
+                                    fontSize: settings.tafseerFontSize,
+                                    lineHeight:
+                                      settings.tafseerFontSize * 1.75,
+                                  },
+                                ]}
+                              >
+                                {tafseerText}
+                              </Text>
+                            ) : (
+                              <Text
+                                style={[
+                                  styles.tafseerText,
+                                  { color: colors.mutedForeground },
+                                ]}
+                              >
+                                Tafseer not available for this ayah.
+                              </Text>
+                            )}
+                          </View>
                         )}
                       </View>
                     )}
-                  </View>
-                )}
-              </Pressable>
-            );
-          }}
-          contentContainerStyle={{
-            paddingBottom: Platform.OS === "web" ? 84 + 34 : 100,
-          }}
-          onScrollToIndexFailed={(info) => {
-            flatRef.current?.scrollToOffset({
-              offset: info.averageItemLength * info.index,
-              animated: true,
-            });
-          }}
-          showsVerticalScrollIndicator={false}
-        />
-      )}
-
-      {actionAyah && (
-        <Modal
-          visible
-          transparent
-          animationType="slide"
-          onRequestClose={() => setActionAyah(null)}
-        >
-          <Pressable
-            style={styles.modalOverlay}
-            onPress={() => setActionAyah(null)}
-          >
-            <View
-              style={[
-                styles.actionSheet,
-                {
-                  backgroundColor: colors.card,
-                  borderColor: colors.border,
-                },
-              ]}
-            >
-              <View
-                style={[styles.sheetHandle, { backgroundColor: colors.border }]}
-              />
-              <Text
-                style={[styles.actionTitle, { color: colors.mutedForeground }]}
-              >
-                {actionAyah.surahEnglishName} · Ayah {actionAyah.numberInSurah}
-              </Text>
-
-              <TouchableOpacity
-                style={styles.actionItem}
-                onPress={() => handleShare(actionAyah)}
-              >
-                <Ionicons
-                  name="share-social-outline"
-                  size={22}
-                  color={colors.primary}
-                />
-                <Text style={[styles.actionText, { color: colors.foreground }]}>
-                  Share Ayah
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.actionItem}
-                onPress={() => handleCopy(actionAyah)}
-              >
-                <Ionicons
-                  name="copy-outline"
-                  size={22}
-                  color={colors.primary}
-                />
-                <Text style={[styles.actionText, { color: colors.foreground }]}>
-                  Copy Ayah
-                </Text>
-              </TouchableOpacity>
-
-              {(() => {
-                const bookmarked = isBookmarked(
-                  actionAyah.surahNumber,
-                  actionAyah.numberInSurah
+                  </Pressable>
                 );
-                return (
-                  <TouchableOpacity
-                    style={styles.actionItem}
-                    onPress={() => {
-                      if (bookmarked) {
-                        const found = bookmarks.find(
-                          (b) =>
-                            b.surahNumber === actionAyah.surahNumber &&
-                            b.ayahNumber === actionAyah.numberInSurah
-                        );
-                        if (found) removeBookmark(found.id);
-                      } else {
-                        addBookmark({
-                          surahNumber: actionAyah.surahNumber,
-                          ayahNumber: actionAyah.numberInSurah,
-                          surahName: actionAyah.surahName,
-                          surahEnglishName: actionAyah.surahEnglishName,
-                        });
-                      }
-                      Haptics.notificationAsync(
-                        Haptics.NotificationFeedbackType.Success
-                      );
-                      setActionAyah(null);
+
+                return isHighlighted ? (
+                  <Animated.View
+                    key={ayah.numberInSurah}
+                    style={{
+                      backgroundColor: highlightBg,
+                      marginHorizontal: 16,
+                      marginVertical: 5,
+                      borderRadius: 14,
                     }}
                   >
-                    <Ionicons
-                      name={bookmarked ? "bookmark" : "bookmark-outline"}
-                      size={22}
-                      color={bookmarked ? colors.accent : colors.primary}
-                    />
-                    <Text
-                      style={[
-                        styles.actionText,
-                        {
-                          color: bookmarked
-                            ? colors.accent
-                            : colors.foreground,
-                        },
-                      ]}
-                    >
-                      {bookmarked ? "Remove Bookmark" : "Bookmark Ayah"}
-                    </Text>
-                  </TouchableOpacity>
+                    {cardContent}
+                  </Animated.View>
+                ) : (
+                  <View key={ayah.numberInSurah}>{cardContent}</View>
                 );
-              })()}
+              })}
+            </>
+          )}
+        </ScrollView>
 
-              <TouchableOpacity
-                style={styles.actionItem}
-                onPress={() => {
-                  setLastRead({
-                    surahNumber: actionAyah.surahNumber,
-                    ayahNumber: actionAyah.numberInSurah,
-                    surahName: actionAyah.surahName,
-                    surahEnglishName: actionAyah.surahEnglishName,
-                  });
-                  Haptics.notificationAsync(
-                    Haptics.NotificationFeedbackType.Success
-                  );
-                  setActionAyah(null);
-                }}
+        {actionAyah && (
+          <Modal
+            visible
+            transparent
+            animationType="slide"
+            onRequestClose={() => setActionAyah(null)}
+          >
+            <Pressable
+              style={styles.modalOverlay}
+              onPress={() => setActionAyah(null)}
+            >
+              <View
+                style={[
+                  styles.actionSheet,
+                  {
+                    backgroundColor: colors.card,
+                    borderColor: colors.border,
+                  },
+                ]}
               >
-                <Ionicons
-                  name="book-outline"
-                  size={22}
-                  color={colors.primary}
+                <View
+                  style={[
+                    styles.sheetHandle,
+                    { backgroundColor: colors.border },
+                  ]}
                 />
-                <Text style={[styles.actionText, { color: colors.foreground }]}>
-                  Mark as Last Read
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.cancelBtn, { borderTopColor: colors.border }]}
-                onPress={() => setActionAyah(null)}
-              >
                 <Text
-                  style={[styles.cancelText, { color: colors.mutedForeground }]}
+                  style={[
+                    styles.actionTitle,
+                    { color: colors.mutedForeground },
+                  ]}
                 >
-                  Cancel
+                  {actionAyah.surahEnglishName} · Ayah{" "}
+                  {actionAyah.numberInSurah}
                 </Text>
-              </TouchableOpacity>
-            </View>
-          </Pressable>
-        </Modal>
+
+                <TouchableOpacity
+                  style={styles.actionItem}
+                  onPress={() => handleShare(actionAyah)}
+                >
+                  <Ionicons
+                    name="share-social-outline"
+                    size={22}
+                    color={colors.primary}
+                  />
+                  <Text
+                    style={[styles.actionText, { color: colors.foreground }]}
+                  >
+                    Share Ayah
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.actionItem}
+                  onPress={() => handleCopy(actionAyah)}
+                >
+                  <Ionicons
+                    name="copy-outline"
+                    size={22}
+                    color={colors.primary}
+                  />
+                  <Text
+                    style={[styles.actionText, { color: colors.foreground }]}
+                  >
+                    Copy Ayah
+                  </Text>
+                </TouchableOpacity>
+
+                {(() => {
+                  const bookmarked = isBookmarked(
+                    actionAyah.surahNumber,
+                    actionAyah.numberInSurah
+                  );
+                  return (
+                    <TouchableOpacity
+                      style={styles.actionItem}
+                      onPress={() => {
+                        if (bookmarked) {
+                          const found = bookmarks.find(
+                            (b) =>
+                              b.surahNumber === actionAyah.surahNumber &&
+                              b.ayahNumber === actionAyah.numberInSurah
+                          );
+                          if (found) removeBookmark(found.id);
+                        } else {
+                          addBookmark({
+                            surahNumber: actionAyah.surahNumber,
+                            ayahNumber: actionAyah.numberInSurah,
+                            surahName: actionAyah.surahName,
+                            surahEnglishName: actionAyah.surahEnglishName,
+                          });
+                        }
+                        Haptics.notificationAsync(
+                          Haptics.NotificationFeedbackType.Success
+                        );
+                        setActionAyah(null);
+                      }}
+                    >
+                      <Ionicons
+                        name={bookmarked ? "bookmark" : "bookmark-outline"}
+                        size={22}
+                        color={colors.primary}
+                      />
+                      <Text
+                        style={[
+                          styles.actionText,
+                          { color: colors.foreground },
+                        ]}
+                      >
+                        {bookmarked ? "Remove Bookmark" : "Bookmark Ayah"}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })()}
+
+                <TouchableOpacity
+                  style={styles.actionItem}
+                  onPress={() => {
+                    setLastRead({
+                      surahNumber: actionAyah.surahNumber,
+                      ayahNumber: actionAyah.numberInSurah,
+                      surahName: actionAyah.surahName,
+                      surahEnglishName: actionAyah.surahEnglishName,
+                    });
+                    Haptics.notificationAsync(
+                      Haptics.NotificationFeedbackType.Success
+                    );
+                    setActionAyah(null);
+                    Alert.alert(
+                      "Last Read Saved",
+                      `Marked Ayah ${actionAyah.numberInSurah} as your last read position.`
+                    );
+                  }}
+                >
+                  <Ionicons
+                    name="bookmark-outline"
+                    size={22}
+                    color={colors.accent}
+                  />
+                  <Text
+                    style={[styles.actionText, { color: colors.foreground }]}
+                  >
+                    Mark as Last Read
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.actionItem, styles.actionItemLast]}
+                  onPress={() => setActionAyah(null)}
+                >
+                  <Text
+                    style={[
+                      styles.actionText,
+                      {
+                        color: colors.mutedForeground,
+                        textAlign: "center",
+                        flex: 1,
+                      },
+                    ]}
+                  >
+                    Close
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </Pressable>
+          </Modal>
+        )}
+      </View>
+    </GestureDetector>
+  );
+}
+
+function PageAyahContent({
+  ayah,
+  bookmarked,
+  settings,
+  fontFamily,
+  accentColor,
+  foregroundColor,
+}: {
+  ayah: AyahData;
+  bookmarked: boolean;
+  settings: QuranSettings;
+  fontFamily: string;
+  accentColor: string;
+  foregroundColor: string;
+}) {
+  return (
+    <>
+      {bookmarked && (
+        <View style={styles.pageBookmarkDot}>
+          <Ionicons name="bookmark" size={11} color={accentColor} />
+        </View>
       )}
-    </View>
+      {settings.showTajweed ? (
+        <TajweedText
+          text={ayah.text}
+          fontSize={settings.arabicFontSize}
+          fontFamily={fontFamily}
+          color={foregroundColor}
+          style={{
+            textAlign: "right",
+            writingDirection: "rtl",
+            lineHeight: settings.arabicFontSize * 2.2,
+          }}
+          suffix={<Text style={{ color: accentColor, fontSize: settings.arabicFontSize * 0.72 }}>{" "}﴿{ayah.numberInSurah}﴾</Text>}
+        />
+      ) : (
+        <Text
+          style={{
+            fontFamily,
+            fontSize: settings.arabicFontSize,
+            color: foregroundColor,
+            textAlign: "right",
+            writingDirection: "rtl",
+            lineHeight: settings.arabicFontSize * 2.2,
+          }}
+        >
+          {ayah.text}
+          <Text
+            style={{
+              color: accentColor,
+              fontSize: settings.arabicFontSize * 0.72,
+            }}
+          >
+            {" "}﴿{ayah.numberInSurah}﴾
+          </Text>
+        </Text>
+      )}
+    </>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  center: { alignItems: "center", justifyContent: "center" },
-  listHeader: { gap: 0, marginBottom: 8 },
+  center: { flex: 1, alignItems: "center", justifyContent: "center" },
   surahInfoCard: {
-    marginHorizontal: 16,
-    marginTop: 16,
+    margin: 16,
     borderRadius: 16,
-    padding: 20,
+    padding: 24,
     alignItems: "center",
     gap: 4,
   },
-  surahInfoArabic: { fontSize: 22, marginBottom: 4 },
-  surahInfoEnglish: { fontSize: 20, fontFamily: "Inter_700Bold" },
-  surahInfoTranslation: { fontSize: 13, fontFamily: "Inter_400Regular" },
-  surahMetaText: { fontSize: 12, fontFamily: "Inter_400Regular", marginTop: 4 },
+  surahInfoArabic: {
+    fontSize: 32,
+    textAlign: "center",
+    writingDirection: "rtl",
+  },
+  surahInfoEnglish: {
+    fontSize: 20,
+    fontFamily: "Inter_600SemiBold",
+    marginTop: 4,
+  },
+  surahInfoTranslation: { fontSize: 14, fontFamily: "Inter_400Regular" },
+  surahMetaText: {
+    fontSize: 12,
+    fontFamily: "Inter_400Regular",
+    marginTop: 4,
+  },
   bismillahCard: {
     marginHorizontal: 16,
-    marginTop: 12,
-    borderRadius: 14,
+    marginBottom: 12,
+    borderRadius: 12,
     borderWidth: 1,
-    padding: 20,
+    padding: 16,
     alignItems: "center",
   },
   bismillahText: { textAlign: "center", writingDirection: "rtl" },
-  contHint: {
+  swipeHint: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
     marginHorizontal: 16,
-    marginTop: 10,
-    marginBottom: 2,
-    borderRadius: 10,
+    marginBottom: 8,
+    borderRadius: 8,
     borderWidth: 1,
     paddingHorizontal: 12,
     paddingVertical: 7,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-  },
-  contHintText: {
-    fontSize: 11,
-    fontFamily: "Inter_400Regular",
-    flex: 1,
-  },
-  contAyah: {
-    paddingHorizontal: 20,
-    paddingTop: 14,
-    paddingBottom: 10,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    gap: 6,
-  },
-  contAyahMeta: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    marginBottom: 4,
-  },
-  contAyahBadge: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    borderWidth: 1.5,
-    alignItems: "center",
     justifyContent: "center",
   },
-  contAyahNum: {
-    fontSize: 11,
-    fontFamily: "Inter_600SemiBold",
+  tapHint: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginHorizontal: 16,
+    marginBottom: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    justifyContent: "center",
   },
-  contTranslation: {
+  contModeHint: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginHorizontal: 16,
+    marginTop: 4,
+    marginBottom: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    justifyContent: "center",
+  },
+  contHintText: {
+    fontSize: 12,
     fontFamily: "Inter_400Regular",
-    marginTop: 6,
+  },
+  swipeHintText: { fontSize: 12, fontFamily: "Inter_400Regular" },
+  pageContainer: {
+    paddingHorizontal: 16,
     paddingTop: 8,
-    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  pageAyah: {
+    paddingVertical: 6,
+    borderRadius: 8,
+    position: "relative",
+  },
+  pageBookmarkDot: {
+    position: "absolute",
+    top: 4,
+    right: 0,
   },
   ayahCard: {
     marginHorizontal: 16,
@@ -850,60 +1045,71 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   ayahNumber: { fontSize: 13, fontFamily: "Inter_600SemiBold" },
-  ayahHeaderRight: { flexDirection: "row", alignItems: "center", gap: 8 },
-  arabicText: { textAlign: "right", writingDirection: "rtl" },
-  translation: { fontFamily: "Inter_400Regular" },
+  ayahHeaderRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  arabicText: {
+    textAlign: "right",
+    writingDirection: "rtl",
+  },
+  translation: {
+    fontFamily: "Inter_400Regular",
+  },
   tafseerToggle: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
-    paddingVertical: 4,
+    gap: 6,
+    paddingTop: 8,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: "#ccc",
   },
-  tafseerLabel: { fontSize: 12, fontFamily: "Inter_600SemiBold" },
+  tafseerLabel: { fontSize: 13, fontFamily: "Inter_500Medium" },
   tafseerBlock: {
+    marginTop: 8,
     paddingLeft: 12,
-    borderLeftWidth: 2,
-    marginTop: 4,
+    borderLeftWidth: 3,
   },
-  tafseerText: { fontFamily: "Inter_400Regular" },
+  tafseerText: {
+    fontFamily: "Inter_400Regular",
+  },
   modalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.4)",
+    backgroundColor: "rgba(0,0,0,0.45)",
     justifyContent: "flex-end",
   },
   actionSheet: {
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     borderWidth: 1,
-    padding: 20,
-    paddingBottom: 36,
+    paddingBottom: 34,
   },
   sheetHandle: {
     width: 40,
     height: 4,
     borderRadius: 2,
     alignSelf: "center",
-    marginBottom: 12,
+    marginTop: 12,
+    marginBottom: 8,
   },
   actionTitle: {
-    fontSize: 12,
+    fontSize: 13,
     fontFamily: "Inter_500Medium",
     textAlign: "center",
-    marginBottom: 8,
+    paddingBottom: 12,
+    paddingHorizontal: 20,
   },
   actionItem: {
     flexDirection: "row",
     alignItems: "center",
     gap: 14,
-    paddingVertical: 14,
-    paddingHorizontal: 4,
+    paddingHorizontal: 24,
+    paddingVertical: 16,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: "rgba(128,128,128,0.2)",
   },
-  actionText: { fontSize: 16, fontFamily: "Inter_500Medium" },
-  cancelBtn: {
-    borderTopWidth: 1,
-    marginTop: 8,
-    paddingTop: 14,
-    alignItems: "center",
-  },
-  cancelText: { fontSize: 16, fontFamily: "Inter_400Regular" },
+  actionItemLast: {},
+  actionText: { fontSize: 16, fontFamily: "Inter_400Regular" },
+  listHeader: { gap: 0 },
 });

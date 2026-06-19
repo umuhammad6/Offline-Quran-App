@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { LinearGradient } from "expo-linear-gradient";
 import * as MediaLibrary from "expo-media-library";
 import * as Sharing from "expo-sharing";
+import SettingsGearButton from "@/components/SettingsGearButton";
 import React, { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -185,14 +186,17 @@ export default function AyahOfDayScreen() {
           colors={[colors.primary, colors.primary + "BB"]}
           style={styles.heroCard}
         >
-          <Text
-            style={[
-              styles.heroLabel,
-              { color: colors.primaryForeground, opacity: 0.75 },
-            ]}
-          >
-            AYAH OF THE DAY
-          </Text>
+          <View style={styles.heroTopRow}>
+            <Text
+              style={[
+                styles.heroLabel,
+                { color: colors.primaryForeground, opacity: 0.75 },
+              ]}
+            >
+              AYAH OF THE DAY
+            </Text>
+            <SettingsGearButton />
+          </View>
           <Text
             style={[
               styles.heroDate,
@@ -403,6 +407,12 @@ export default function AyahOfDayScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   scroll: { padding: 20, gap: 14 },
+  heroTopRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 4,
+  },
   heroCard: {
     borderRadius: 20,
     padding: 28,
