@@ -32,6 +32,7 @@ import {
   useQuranSettings,
   type QuranSettings,
 } from "@/context/QuranContext";
+import SettingsGearButton from "@/components/SettingsGearButton";
 import { useBookmarks } from "@/context/BookmarkContext";
 import { AyahData } from "@/components/AyahItem";
 import TajweedText, { stripTajweedTags } from "@/components/TajweedText";
@@ -137,16 +138,18 @@ export default function SurahScreen() {
       navigation.setOptions({
         title: arabicData.englishName,
         headerRight: () => (
-          <Text
-            style={{
-              fontFamily,
-              fontSize: 18,
-              color: colors.accent,
-              marginRight: 8,
-            }}
-          >
-            {arabicData.name}
-          </Text>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginRight: 4 }}>
+            <Text
+              style={{
+                fontFamily,
+                fontSize: 18,
+                color: colors.accent,
+              }}
+            >
+              {arabicData.name}
+            </Text>
+            <SettingsGearButton />
+          </View>
         ),
       });
     }
@@ -300,15 +303,18 @@ export default function SurahScreen() {
 
   const swipeGesture = Gesture.Pan()
     .runOnJS(true)
-    .activeOffsetX([-40, 40])
-    .failOffsetY([-25, 25])
+    .activeOffsetX([-50, 50])
+    .failOffsetY([-60, 60])
     .onEnd((e) => {
-      if (e.translationX < -80 && e.velocityX < -100 && surahId < 114) {
+      const dx = e.translationX;
+      const dy = e.translationY;
+      if (Math.abs(dx) < 80 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+      if (dx < 0 && surahId < 114) {
         router.replace({
           pathname: "/surah/[id]",
           params: { id: (surahId + 1).toString() },
         });
-      } else if (e.translationX > 80 && e.velocityX > 100 && surahId > 1) {
+      } else if (dx > 0 && surahId > 1) {
         router.replace({
           pathname: "/surah/[id]",
           params: { id: (surahId - 1).toString() },
@@ -697,6 +703,61 @@ export default function SurahScreen() {
               })}
             </>
           )}
+
+          {/* End of surah navigation */}
+          {arabicData && (
+            <View style={[styles.endNavRow, { borderTopColor: colors.border }]}>
+              {surahId > 1 ? (
+                <TouchableOpacity
+                  style={[
+                    styles.endNavBtn,
+                    { backgroundColor: colors.card, borderColor: colors.border },
+                  ]}
+                  onPress={() =>
+                    router.replace({
+                      pathname: "/surah/[id]",
+                      params: { id: (surahId - 1).toString() },
+                    })
+                  }
+                >
+                  <Ionicons name="chevron-back" size={16} color={colors.primary} />
+                  <Text style={[styles.endNavText, { color: colors.primary }]}>
+                    Previous Surah
+                  </Text>
+                </TouchableOpacity>
+              ) : (
+                <View style={{ flex: 1 }} />
+              )}
+
+              {surahId < 114 ? (
+                <TouchableOpacity
+                  style={[styles.endNavBtn, { backgroundColor: colors.primary }]}
+                  onPress={() =>
+                    router.replace({
+                      pathname: "/surah/[id]",
+                      params: { id: (surahId + 1).toString() },
+                    })
+                  }
+                >
+                  <Text
+                    style={[
+                      styles.endNavText,
+                      { color: colors.primaryForeground },
+                    ]}
+                  >
+                    Next Surah
+                  </Text>
+                  <Ionicons
+                    name="chevron-forward"
+                    size={16}
+                    color={colors.primaryForeground}
+                  />
+                </TouchableOpacity>
+              ) : (
+                <View style={{ flex: 1 }} />
+              )}
+            </View>
+          )}
         </ScrollView>
 
         {actionAyah && (
@@ -887,7 +948,7 @@ function PageAyahContent({
   foregroundColor: string;
 }) {
   return (
-    <>
+    <View style={{ position: "relative" }}>
       {bookmarked && (
         <View style={styles.pageBookmarkDot}>
           <Ionicons name="bookmark" size={11} color={accentColor} />
@@ -904,7 +965,6 @@ function PageAyahContent({
             writingDirection: "rtl",
             lineHeight: settings.arabicFontSize * 2.2,
           }}
-          suffix={<Text style={{ color: accentColor, fontSize: settings.arabicFontSize * 0.72 }}>{" "}﴿{ayah.numberInSurah}﴾</Text>}
         />
       ) : (
         <Text
@@ -918,17 +978,16 @@ function PageAyahContent({
           }}
         >
           {ayah.text}
-          <Text
-            style={{
-              color: accentColor,
-              fontSize: settings.arabicFontSize * 0.72,
-            }}
-          >
-            {" "}﴿{ayah.numberInSurah}﴾
-          </Text>
         </Text>
       )}
-    </>
+      <View style={styles.ayahEndRow}>
+        <View style={[styles.ayahEndCircle, { borderColor: accentColor }]}>
+          <Text style={[styles.ayahEndNum, { color: accentColor }]}>
+            {ayah.numberInSurah}
+          </Text>
+        </View>
+      </View>
+    </View>
   );
 }
 
@@ -1112,4 +1171,42 @@ const styles = StyleSheet.create({
   actionItemLast: {},
   actionText: { fontSize: 16, fontFamily: "Inter_400Regular" },
   listHeader: { gap: 0 },
+  ayahEndRow: {
+    flexDirection: "row",
+    justifyContent: "center",
+    marginVertical: 6,
+  },
+  ayahEndCircle: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    borderWidth: 1.5,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  ayahEndNum: {
+    fontSize: 10,
+    fontFamily: "Inter_600SemiBold",
+  },
+  endNavRow: {
+    flexDirection: "row",
+    gap: 10,
+    padding: 16,
+    marginTop: 8,
+    borderTopWidth: 1,
+  },
+  endNavBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 14,
+    borderRadius: 14,
+    borderWidth: 1,
+  },
+  endNavText: {
+    fontSize: 14,
+    fontFamily: "Inter_600SemiBold",
+  },
 });

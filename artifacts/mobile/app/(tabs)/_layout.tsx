@@ -158,8 +158,7 @@ function ClassicTabLayout() {
       <Tabs.Screen
         name="settings"
         options={{
-          title: "Settings",
-          tabBarButton: () => null,
+          href: null,
         }}
       />
     </Tabs>

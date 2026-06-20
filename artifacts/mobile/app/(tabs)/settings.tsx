@@ -212,21 +212,37 @@ export default function SettingsScreen() {
             </View>
           </SettingRow>
 
-          <SettingRow label="Show Translation">
+          <SettingRow
+            label="Show Translation"
+            description={settings.continuousMode ? "Turn off Continuous Mode to use this" : undefined}
+          >
             <Switch
-              value={settings.showTranslation}
-              onValueChange={(v) => updateSetting("showTranslation", v)}
-              trackColor={{ false: colors.muted, true: colors.primary }}
+              value={settings.showTranslation && !settings.continuousMode}
+              onValueChange={(v) => {
+                if (settings.continuousMode) return;
+                updateSetting("showTranslation", v);
+              }}
+              disabled={settings.continuousMode}
+              trackColor={{ false: colors.muted, true: settings.continuousMode ? colors.muted : colors.primary }}
               thumbColor={colors.card}
+              style={{ opacity: settings.continuousMode ? 0.4 : 1 }}
             />
           </SettingRow>
 
-          <SettingRow label="Show Tafseer">
+          <SettingRow
+            label="Show Tafseer"
+            description={settings.continuousMode ? "Turn off Continuous Mode to use this" : undefined}
+          >
             <Switch
-              value={settings.showTafseer}
-              onValueChange={(v) => updateSetting("showTafseer", v)}
-              trackColor={{ false: colors.muted, true: colors.primary }}
+              value={settings.showTafseer && !settings.continuousMode}
+              onValueChange={(v) => {
+                if (settings.continuousMode) return;
+                updateSetting("showTafseer", v);
+              }}
+              disabled={settings.continuousMode}
+              trackColor={{ false: colors.muted, true: settings.continuousMode ? colors.muted : colors.primary }}
               thumbColor={colors.card}
+              style={{ opacity: settings.continuousMode ? 0.4 : 1 }}
             />
           </SettingRow>
 

@@ -178,7 +178,6 @@ export default function QuranScreen() {
                     params: {
                       id: lastRead.surahNumber.toString(),
                       scrollToAyah: lastRead.ayahNumber.toString(),
-                      forceCardMode: "true",
                     },
                   })
                 }

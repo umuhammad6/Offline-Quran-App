@@ -175,10 +175,26 @@ export default function AyahOfDayScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <View
+        style={[
+          styles.screenHeader,
+          {
+            paddingTop: topPad + 4,
+            backgroundColor: colors.background,
+            borderBottomColor: colors.border,
+          },
+        ]}
+      >
+        <Text style={[styles.screenTitle, { color: colors.foreground }]}>
+          Ayah of the Day
+        </Text>
+        <SettingsGearButton />
+      </View>
+
       <ScrollView
         contentContainerStyle={[
           styles.scroll,
-          { paddingTop: topPad, paddingBottom: bottomPad },
+          { paddingBottom: bottomPad },
         ]}
         showsVerticalScrollIndicator={false}
       >
@@ -186,17 +202,14 @@ export default function AyahOfDayScreen() {
           colors={[colors.primary, colors.primary + "BB"]}
           style={styles.heroCard}
         >
-          <View style={styles.heroTopRow}>
-            <Text
-              style={[
-                styles.heroLabel,
-                { color: colors.primaryForeground, opacity: 0.75 },
-              ]}
-            >
-              AYAH OF THE DAY
-            </Text>
-            <SettingsGearButton />
-          </View>
+          <Text
+            style={[
+              styles.heroLabel,
+              { color: colors.primaryForeground, opacity: 0.75 },
+            ]}
+          >
+            AYAH OF THE DAY
+          </Text>
           <Text
             style={[
               styles.heroDate,
@@ -407,11 +420,17 @@ export default function AyahOfDayScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   scroll: { padding: 20, gap: 14 },
-  heroTopRow: {
+  screenHeader: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 4,
+    paddingHorizontal: 20,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+  },
+  screenTitle: {
+    fontSize: 26,
+    fontFamily: "Inter_700Bold",
   },
   heroCard: {
     borderRadius: 20,

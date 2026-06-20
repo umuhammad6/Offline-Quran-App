@@ -1,0 +1,21 @@
+ A few things to fix: 
+
+So swiping between surahs doesn't work at all ( fix this), also when you reach the end of surah you should have option to go next or previous surah also.
+
+For the search function that searches translations, searching in English works fine as it shows the ayah ( which is in Arabic and then the English) searching in Arabic should show the same also, I am just basically using Arabic to search the word in ayah instead of English ( like if I search 'jinn' it highlights jinn in the English, for Arabic and english it should show highlight both the word in English and Arabic and you should also fix it so when I search in Arabic, the translation isn't some random Arabic, it should be same as when I search in English, the ayah and English translation but the word I searched for in Arabic is highlighted in the ayah and English translation.
+
+Also settings gear icon should be displayed a bit cleaner in the 'ayah of the day' tab, make it a bit cleaner placed, also the settings gear icon should be available at the top somewhere clean in all the surahs also
+
+Continous mode doesn't work properly, the ayahs don't show joined properly and theres also green dots placed in the middle of some letters in the ayahs not between the ayahs and the number of the ayah isn't even in the green dot
+
+Also, when continuous mode is on the tafseer and translation option still works and it's not blanked out ( when someone tries to use the translation or tafseer option when continuous mode is turned on then it should tell them to turn it off before trying)
+
+Also even when continuous mode is on, when you press continue reading, they ayahs still display as if continuous mode is turned off
+
+Also can you make sure the tajweed colours on all the places are correct, like the ل & من at the beginning in surah baqarah in the first ayah  'الٓمٓ' was blue which shows iqlaab, so is that really correct? Being AUTHENTIC and CORRECT is 100% most important ( no fake, no cheats and no deceit) ( make sure your source for the tajweed colours on correct letters is authentic, no making up anything)
+
+Also there's a gap in the right side of bottom tab bar because the settings gear icon was moved, so balance all the tabs out and make it so they are all centred and sitting properly with no extra space on the right side.
+
+MAKE SURE TO FIX EVERYTHING AND DOUBLE CHECK EVERYTHING WORKS SEPERATELY AND TOGETHER, DONT TELL ME TO PICK WHAT TO FIX BECAUSE ITS TOO MUCH, YOU'RE ABLE TO FIX IT ALL, SO VERIFY, PLAN AND FIX IT ALL
+
+
