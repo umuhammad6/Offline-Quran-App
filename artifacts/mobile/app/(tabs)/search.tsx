@@ -17,7 +17,7 @@ import { useColors } from "@/hooks/useColors";
 import { getArabicFontFamily, useQuranSettings } from "@/context/QuranContext";
 import SettingsGearButton from "@/components/SettingsGearButton";
 
-interface CombinedResult {
+interface SearchResult {
   number: number;
   numberInSurah: number;
   surah: {
@@ -26,12 +26,8 @@ interface CombinedResult {
     englishName: string;
     englishNameTranslation: string;
   };
-  arabicText: string;
   englishText: string;
-}
-
-function isArabicText(text: string): boolean {
-  return /[\u0600-\u06FF\u0750-\u077F\uFB50-\uFDFF\uFE70-\uFEFF]/.test(text);
+  arabicText: string;
 }
 
 function HighlightedText({
@@ -78,12 +74,11 @@ export default function SearchScreen() {
   const { settings } = useQuranSettings();
   const arabicFont = getArabicFontFamily(settings.fontType);
   const [query, setQuery] = useState("");
-  const [matches, setMatches] = useState<CombinedResult[]>([]);
+  const [results, setResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
   const [error, setError] = useState(false);
   const [searchedQuery, setSearchedQuery] = useState("");
-  const [isArabicSearch, setIsArabicSearch] = useState(false);
   const inputRef = useRef<TextInput>(null);
 
   const doSearch = async (q = query) => {
@@ -94,90 +89,46 @@ export default function SearchScreen() {
     setSearchedQuery(q.trim());
     Keyboard.dismiss();
 
-    const arabic = isArabicText(q.trim());
-    setIsArabicSearch(arabic);
-
     try {
       const term = encodeURIComponent(q.trim());
+      const res = await fetch(
+        `https://api.alquran.cloud/v1/search/${term}/all/en.sahih`
+      );
+      const json = await res.json();
+      const matches = (json.data?.matches ?? []).slice(0, 30);
 
-      if (arabic) {
-        // Arabic search: find ayahs by Arabic text, then fetch English translations
-        const res = await fetch(
-          `https://api.alquran.cloud/v1/search/${term}/all/ar`
-        );
-        const json = await res.json();
-        const primary = (json.data?.matches ?? []).slice(0, 30);
-
-        if (primary.length === 0) {
-          setMatches([]);
-          return;
-        }
-
-        // Batch-fetch English translation for each match
-        const englishTexts = await Promise.all(
-          primary.map(async (m: any) => {
-            try {
-              const r = await fetch(
-                `https://api.alquran.cloud/v1/ayah/${m.surah.number}:${m.numberInSurah}/en.sahih`
-              );
-              const j = await r.json();
-              return j.data?.text ?? "";
-            } catch {
-              return "";
-            }
-          })
-        );
-
-        setMatches(
-          primary.map((m: any, i: number) => ({
-            number: m.number,
-            numberInSurah: m.numberInSurah,
-            surah: m.surah,
-            arabicText: m.text,
-            englishText: englishTexts[i],
-          }))
-        );
-      } else {
-        // English search: find ayahs by English text, then fetch Arabic text
-        const res = await fetch(
-          `https://api.alquran.cloud/v1/search/${term}/all/en.sahih`
-        );
-        const json = await res.json();
-        const primary = (json.data?.matches ?? []).slice(0, 30);
-
-        if (primary.length === 0) {
-          setMatches([]);
-          return;
-        }
-
-        // Batch-fetch Arabic text for each match
-        const arabicTexts = await Promise.all(
-          primary.map(async (m: any) => {
-            try {
-              const r = await fetch(
-                `https://api.alquran.cloud/v1/ayah/${m.surah.number}:${m.numberInSurah}/quran-uthmani`
-              );
-              const j = await r.json();
-              return j.data?.text ?? "";
-            } catch {
-              return "";
-            }
-          })
-        );
-
-        setMatches(
-          primary.map((m: any, i: number) => ({
-            number: m.number,
-            numberInSurah: m.numberInSurah,
-            surah: m.surah,
-            arabicText: arabicTexts[i],
-            englishText: m.text,
-          }))
-        );
+      if (matches.length === 0) {
+        setResults([]);
+        return;
       }
+
+      // Fetch Arabic text for each result in parallel
+      const arabicTexts = await Promise.all(
+        matches.map(async (m: any) => {
+          try {
+            const r = await fetch(
+              `https://api.alquran.cloud/v1/ayah/${m.surah.number}:${m.numberInSurah}/quran-uthmani`
+            );
+            const j = await r.json();
+            return j.data?.text ?? "";
+          } catch {
+            return "";
+          }
+        })
+      );
+
+      setResults(
+        matches.map((m: any, i: number) => ({
+          number: m.number,
+          numberInSurah: m.numberInSurah,
+          surah: m.surah,
+          englishText: m.text,
+          arabicText: arabicTexts[i],
+        }))
+      );
     } catch {
       setError(true);
-      setMatches([]);
+      setResults([]);
     } finally {
       setLoading(false);
     }
@@ -185,7 +136,7 @@ export default function SearchScreen() {
 
   const clearSearch = () => {
     setQuery("");
-    setMatches([]);
+    setResults([]);
     setSearched(false);
     setError(false);
     inputRef.current?.focus();
@@ -226,7 +177,7 @@ export default function SearchScreen() {
           <TextInput
             ref={inputRef}
             style={[styles.searchInput, { color: colors.foreground }]}
-            placeholder="Search in English or Arabic..."
+            placeholder='Search e.g. "mercy", "patience", "guidance"...'
             placeholderTextColor={colors.mutedForeground}
             value={query}
             onChangeText={setQuery}
@@ -275,7 +226,11 @@ export default function SearchScreen() {
 
       {!loading && error && (
         <View style={styles.center}>
-          <Ionicons name="wifi-outline" size={44} color={colors.mutedForeground} />
+          <Ionicons
+            name="wifi-outline"
+            size={44}
+            color={colors.mutedForeground}
+          />
           <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>
             Failed to search. Check your connection.
           </Text>
@@ -283,7 +238,12 @@ export default function SearchScreen() {
             style={[styles.retryBtn, { backgroundColor: colors.primary }]}
             onPress={() => doSearch()}
           >
-            <Text style={[styles.retryText, { color: colors.primaryForeground }]}>
+            <Text
+              style={[
+                styles.retryText,
+                { color: colors.primaryForeground },
+              ]}
+            >
               Retry
             </Text>
           </TouchableOpacity>
@@ -292,55 +252,55 @@ export default function SearchScreen() {
 
       {!loading && !searched && !error && (
         <View style={styles.center}>
-          <Ionicons name="book-outline" size={44} color={colors.mutedForeground} />
+          <Ionicons
+            name="book-outline"
+            size={44}
+            color={colors.mutedForeground}
+          />
           <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>
-            Search the Quran
+            Search the Quran in English
           </Text>
-          <Text style={[styles.emptySubText, { color: colors.mutedForeground }]}>
-            Search in English: "mercy", "patience", "guidance"
-          </Text>
-          <Text style={[styles.emptySubText, { color: colors.mutedForeground }]}>
-            Search in Arabic to find specific words in the Quran
+          <Text
+            style={[styles.emptySubText, { color: colors.mutedForeground }]}
+          >
+            Try: "mercy", "patience", "guidance", "light", "prayer"
           </Text>
         </View>
       )}
 
-      {!loading && searched && !error && matches.length === 0 && (
+      {!loading && searched && !error && results.length === 0 && (
         <View style={styles.center}>
-          <Ionicons name="search-outline" size={44} color={colors.mutedForeground} />
+          <Ionicons
+            name="search-outline"
+            size={44}
+            color={colors.mutedForeground}
+          />
           <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>
             No results for "{searchedQuery}"
           </Text>
-          <Text style={[styles.emptySubText, { color: colors.mutedForeground }]}>
-            Try different keywords or check spelling
+          <Text
+            style={[styles.emptySubText, { color: colors.mutedForeground }]}
+          >
+            Try different keywords
           </Text>
         </View>
       )}
 
-      {!loading && matches.length > 0 && (
+      {!loading && results.length > 0 && (
         <FlatList
-          data={matches}
+          data={results}
           keyExtractor={(item) => item.number.toString()}
           keyboardShouldPersistTaps="handled"
           ListHeaderComponent={
-            <View style={styles.resultsHeader}>
-              <Text style={[styles.resultsCount, { color: colors.mutedForeground }]}>
-                {matches.length} result{matches.length !== 1 ? "s" : ""} for "
-                {searchedQuery}"
-              </Text>
-              {isArabicSearch && (
-                <View
-                  style={[
-                    styles.arabicBadge,
-                    { backgroundColor: colors.accent + "22", borderColor: colors.accent },
-                  ]}
-                >
-                  <Text style={[styles.arabicBadgeText, { color: colors.accent }]}>
-                    Arabic
-                  </Text>
-                </View>
-              )}
-            </View>
+            <Text
+              style={[
+                styles.resultsCount,
+                { color: colors.mutedForeground },
+              ]}
+            >
+              {results.length} result{results.length !== 1 ? "s" : ""} for "
+              {searchedQuery}"
+            </Text>
           }
           renderItem={({ item }) => (
             <TouchableOpacity
@@ -361,42 +321,63 @@ export default function SearchScreen() {
               activeOpacity={0.7}
             >
               <View style={styles.resultHeader}>
-                <View style={[styles.surahBadge, { backgroundColor: colors.primary }]}>
-                  <Text style={[styles.surahBadgeText, { color: colors.primaryForeground }]}>
+                <View
+                  style={[
+                    styles.surahBadge,
+                    { backgroundColor: colors.primary },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.surahBadgeText,
+                      { color: colors.primaryForeground },
+                    ]}
+                  >
                     {item.surah.number}:{item.numberInSurah}
                   </Text>
                 </View>
-                <Text style={[styles.surahName, { color: colors.foreground }]}>
+                <Text
+                  style={[styles.surahName, { color: colors.foreground }]}
+                  numberOfLines={1}
+                >
                   {item.surah.englishName}
                 </Text>
-                <Text style={[styles.arabicName, { color: colors.accent, fontFamily: arabicFont }]}>
+                <Text
+                  style={[
+                    styles.arabicName,
+                    { color: colors.accent, fontFamily: arabicFont },
+                  ]}
+                >
                   {item.surah.name}
                 </Text>
               </View>
 
               {item.arabicText ? (
-                <HighlightedText
-                  text={item.arabicText}
-                  query={isArabicSearch ? searchedQuery : ""}
-                  highlightBg={highlightBg}
+                <Text
                   style={[
                     styles.resultArabic,
                     { color: colors.foreground, fontFamily: arabicFont },
                   ]}
-                />
+                  numberOfLines={3}
+                >
+                  {item.arabicText}
+                </Text>
               ) : null}
 
-              {item.englishText ? (
-                <HighlightedText
-                  text={item.englishText}
-                  query={isArabicSearch ? "" : searchedQuery}
-                  highlightBg={highlightBg}
-                  style={[styles.resultEnglish, { color: colors.mutedForeground }]}
-                />
-              ) : null}
+              <HighlightedText
+                text={item.englishText}
+                query={searchedQuery}
+                highlightBg={highlightBg}
+                style={[
+                  styles.resultEnglish,
+                  { color: colors.mutedForeground },
+                ]}
+              />
             </TouchableOpacity>
           )}
           contentContainerStyle={{
+            paddingHorizontal: 16,
+            paddingTop: 8,
             paddingBottom: Platform.OS === "web" ? 84 + 34 : 100,
           }}
           showsVerticalScrollIndicator={false}
@@ -435,7 +416,11 @@ const styles = StyleSheet.create({
     fontFamily: "Inter_400Regular",
     padding: 0,
   },
-  searchBtn: { borderRadius: 10, paddingVertical: 10, alignItems: "center" },
+  searchBtn: {
+    borderRadius: 10,
+    paddingVertical: 10,
+    alignItems: "center",
+  },
   searchBtnText: { fontSize: 15, fontFamily: "Inter_600SemiBold" },
   center: {
     flex: 1,
@@ -444,28 +429,29 @@ const styles = StyleSheet.create({
     gap: 10,
     paddingHorizontal: 40,
   },
-  emptyText: { fontSize: 15, fontFamily: "Inter_500Medium", textAlign: "center" },
-  emptySubText: { fontSize: 13, fontFamily: "Inter_400Regular", textAlign: "center" },
-  retryBtn: { borderRadius: 10, paddingHorizontal: 24, paddingVertical: 10, marginTop: 8 },
-  retryText: { fontSize: 14, fontFamily: "Inter_600SemiBold" },
-  resultsHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    paddingHorizontal: 16,
+  emptyText: {
+    fontSize: 15,
+    fontFamily: "Inter_500Medium",
+    textAlign: "center",
+  },
+  emptySubText: {
+    fontSize: 13,
+    fontFamily: "Inter_400Regular",
+    textAlign: "center",
+  },
+  retryBtn: {
+    borderRadius: 10,
+    paddingHorizontal: 24,
     paddingVertical: 10,
-    flexWrap: "wrap",
+    marginTop: 8,
   },
-  resultsCount: { fontSize: 13, fontFamily: "Inter_400Regular" },
-  arabicBadge: {
-    borderRadius: 6,
-    borderWidth: 1,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
+  retryText: { fontSize: 14, fontFamily: "Inter_600SemiBold" },
+  resultsCount: {
+    fontSize: 13,
+    fontFamily: "Inter_400Regular",
+    paddingVertical: 10,
   },
-  arabicBadgeText: { fontSize: 11, fontFamily: "Inter_600SemiBold" },
   resultCard: {
-    marginHorizontal: 16,
     marginVertical: 4,
     borderRadius: 14,
     borderWidth: 1,
@@ -475,13 +461,17 @@ const styles = StyleSheet.create({
   resultHeader: { flexDirection: "row", alignItems: "center", gap: 8 },
   surahBadge: { borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 },
   surahBadgeText: { fontSize: 12, fontFamily: "Inter_600SemiBold" },
-  surahName: { fontSize: 14, fontFamily: "Inter_600SemiBold", flex: 1 },
+  surahName: {
+    fontSize: 14,
+    fontFamily: "Inter_600SemiBold",
+    flex: 1,
+  },
   arabicName: { fontSize: 16 },
   resultArabic: {
     fontSize: 18,
     textAlign: "right",
     writingDirection: "rtl",
-    lineHeight: 34,
+    lineHeight: 32,
   },
   resultEnglish: {
     fontSize: 14,

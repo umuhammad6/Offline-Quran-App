@@ -15,14 +15,13 @@ import {
   Modal,
   Platform,
   Pressable,
-  ScrollView,
   Share,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from "react-native";
-import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import { Gesture, GestureDetector, ScrollView } from "react-native-gesture-handler";
 import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
 import { useColors } from "@/hooks/useColors";
@@ -105,6 +104,7 @@ export default function SurahScreen() {
 
   const scrollRef = useRef<ScrollView>(null);
   const ayahPositions = useRef<Map<number, number>>(new Map());
+  const pageContainerOffsetY = useRef<number>(0);
   const scrollRetryRef = useRef(0);
   const highlightAnim = useRef(new Animated.Value(0)).current;
   const [highlightedAyah, setHighlightedAyah] = useState<number | null>(null);
@@ -178,25 +178,32 @@ export default function SurahScreen() {
 
   const doScrollToAyah = useCallback(
     (ayahNum: number) => {
-      const y = ayahPositions.current.get(ayahNum);
-      if (y !== undefined) {
+      const relY = ayahPositions.current.get(ayahNum);
+      if (relY !== undefined) {
+        const absoluteY = effectiveContinuous
+          ? pageContainerOffsetY.current + relY
+          : relY;
         scrollRetryRef.current = 0;
-        scrollRef.current?.scrollTo({ y: Math.max(0, y - 80), animated: true });
-        setTimeout(() => flashHighlight(ayahNum), 400);
+        scrollRef.current?.scrollTo({
+          y: Math.max(0, absoluteY - 100),
+          animated: true,
+        });
+        setTimeout(() => flashHighlight(ayahNum), 450);
       } else if (scrollRetryRef.current < MAX_SCROLL_RETRIES) {
         scrollRetryRef.current++;
-        setTimeout(() => doScrollToAyah(ayahNum), 150);
+        setTimeout(() => doScrollToAyah(ayahNum), 200);
       }
     },
-    [flashHighlight]
+    [effectiveContinuous, flashHighlight]
   );
 
   useEffect(() => {
     if (!arabicData || !scrollToAyah) return;
     scrollRetryRef.current = 0;
     ayahPositions.current.clear();
+    pageContainerOffsetY.current = 0;
     const target = Number(scrollToAyah);
-    setTimeout(() => doScrollToAyah(target), 400);
+    setTimeout(() => doScrollToAyah(target), 800);
   }, [arabicData, scrollToAyah]);
 
   const ayahs: AyahData[] = useMemo(
@@ -447,7 +454,12 @@ export default function SurahScreen() {
                 </Text>
               </View>
 
-              <View style={styles.pageContainer}>
+              <View
+                style={styles.pageContainer}
+                onLayout={(e) => {
+                  pageContainerOffsetY.current = e.nativeEvent.layout.y;
+                }}
+              >
                 {ayahs.map((ayah) => {
                   const isHighlighted = highlightedAyah === ayah.numberInSurah;
                   const bookmarked = isBookmarked(
@@ -461,10 +473,7 @@ export default function SurahScreen() {
                       onLayout={(e) => {
                         ayahPositions.current.set(
                           ayah.numberInSurah,
-                          e.nativeEvent.layout.y +
-                            (e.nativeEvent.layout.height === 0
-                              ? 0
-                              : 0)
+                          e.nativeEvent.layout.y
                         );
                       }}
                     >
@@ -542,12 +551,6 @@ export default function SurahScreen() {
                 const cardContent = (
                   <Pressable
                     onPress={() => handleTap(ayah)}
-                    onLayout={(e) => {
-                      ayahPositions.current.set(
-                        ayah.numberInSurah,
-                        e.nativeEvent.layout.y
-                      );
-                    }}
                     style={({ pressed }) => [
                       styles.ayahCard,
                       {
@@ -688,6 +691,12 @@ export default function SurahScreen() {
                 return isHighlighted ? (
                   <Animated.View
                     key={ayah.numberInSurah}
+                    onLayout={(e) =>
+                      ayahPositions.current.set(
+                        ayah.numberInSurah,
+                        e.nativeEvent.layout.y
+                      )
+                    }
                     style={{
                       backgroundColor: highlightBg,
                       marginHorizontal: 16,
@@ -698,7 +707,17 @@ export default function SurahScreen() {
                     {cardContent}
                   </Animated.View>
                 ) : (
-                  <View key={ayah.numberInSurah}>{cardContent}</View>
+                  <View
+                    key={ayah.numberInSurah}
+                    onLayout={(e) =>
+                      ayahPositions.current.set(
+                        ayah.numberInSurah,
+                        e.nativeEvent.layout.y
+                      )
+                    }
+                  >
+                    {cardContent}
+                  </View>
                 );
               })}
             </>

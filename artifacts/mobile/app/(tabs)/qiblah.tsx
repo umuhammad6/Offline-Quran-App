@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as Location from "expo-location";
-import { Magnetometer } from "expo-sensors";
+import { DeviceMotion, Magnetometer } from "expo-sensors";
 import SettingsGearButton from "@/components/SettingsGearButton";
 import React, { useEffect, useRef, useState } from "react";
 import {
@@ -307,29 +307,53 @@ export default function QiblahScreen() {
       return;
     }
 
-    let didReceiveData = false;
-    const noDataTimer = setTimeout(() => {
-      if (!didReceiveData) setSensorAvail(false);
-    }, 4000);
+    let active = true;
 
-    try {
-      Magnetometer.setUpdateInterval(100);
-      magSub.current = Magnetometer.addListener(({ x, y }) => {
-        if (!didReceiveData) {
-          didReceiveData = true;
-          clearTimeout(noDataTimer);
-          setSensorAvail(true);
+    const startMagnetometer = async () => {
+      try {
+        // iOS requires DeviceMotion permission for magnetometer access
+        if (Platform.OS === "ios") {
+          const { status } = await DeviceMotion.requestPermissionsAsync();
+          if (!active) return;
+          if (status !== "granted") {
+            setSensorAvail(false);
+            return;
+          }
         }
-        const h = getMagneticHeading(x, y);
-        setHeading(h);
-      });
-    } catch {
-      clearTimeout(noDataTimer);
-      setSensorAvail(false);
-    }
+
+        // Check if magnetometer hardware is available
+        const available = await Magnetometer.isAvailableAsync();
+        if (!active) return;
+        if (!available) {
+          setSensorAvail(false);
+          return;
+        }
+
+        let didReceiveData = false;
+        const noDataTimer = setTimeout(() => {
+          if (!didReceiveData && active) setSensorAvail(false);
+        }, 5000);
+
+        Magnetometer.setUpdateInterval(80);
+        magSub.current = Magnetometer.addListener(({ x, y }) => {
+          if (!active) return;
+          if (!didReceiveData) {
+            didReceiveData = true;
+            clearTimeout(noDataTimer);
+            setSensorAvail(true);
+          }
+          const h = getMagneticHeading(x, y);
+          setHeading(h);
+        });
+      } catch {
+        if (active) setSensorAvail(false);
+      }
+    };
+
+    startMagnetometer();
 
     return () => {
-      clearTimeout(noDataTimer);
+      active = false;
       magSub.current?.remove();
     };
   }, [locationState]);
