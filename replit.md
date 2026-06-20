@@ -1,6 +1,6 @@
-# [Project name]
+# Quran App
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+A full-featured cross-platform Quran mobile app (iOS/Android/Web) that runs **fully offline** — all Quran text, translations, and prayer time calculations are bundled locally with no external API calls required.
 
 ## Run & Operate
 

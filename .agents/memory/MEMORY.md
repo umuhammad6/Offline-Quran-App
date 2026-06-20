@@ -1,0 +1,2 @@
+- [Offline Quran data layer](offline-quran.md) — all Quran data bundled locally; no alquran.cloud/aladhan.com API calls needed.
+- [Tajweed text stripping](offline-quran.md) — when showTajweed=false, always call stripTajweedTags() before rendering Arabic text or bracket markup appears.

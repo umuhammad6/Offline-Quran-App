@@ -2,7 +2,6 @@ import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import React, { useRef, useState } from "react";
 import {
-  ActivityIndicator,
   FlatList,
   Keyboard,
   Platform,
@@ -16,19 +15,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
 import { getArabicFontFamily, useQuranSettings } from "@/context/QuranContext";
 import SettingsGearButton from "@/components/SettingsGearButton";
-
-interface SearchResult {
-  number: number;
-  numberInSurah: number;
-  surah: {
-    number: number;
-    name: string;
-    englishName: string;
-    englishNameTranslation: string;
-  };
-  englishText: string;
-  arabicText: string;
-}
+import { searchQuran, stripTajweedTags, type SearchResult } from "@/utils/quranData";
 
 function HighlightedText({
   text,
@@ -75,70 +62,22 @@ export default function SearchScreen() {
   const arabicFont = getArabicFontFamily(settings.fontType);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
-  const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
-  const [error, setError] = useState(false);
   const [searchedQuery, setSearchedQuery] = useState("");
   const inputRef = useRef<TextInput>(null);
 
-  const doSearch = async (q = query) => {
+  const doSearch = (q = query) => {
     if (!q.trim()) return;
-    setLoading(true);
-    setError(false);
     setSearched(true);
     setSearchedQuery(q.trim());
     Keyboard.dismiss();
-
-    try {
-      const term = encodeURIComponent(q.trim());
-      const res = await fetch(
-        `https://api.alquran.cloud/v1/search/${term}/all/en.sahih`
-      );
-      const json = await res.json();
-      const matches = (json.data?.matches ?? []).slice(0, 30);
-
-      if (matches.length === 0) {
-        setResults([]);
-        return;
-      }
-
-      // Fetch Arabic text for each result in parallel
-      const arabicTexts = await Promise.all(
-        matches.map(async (m: any) => {
-          try {
-            const r = await fetch(
-              `https://api.alquran.cloud/v1/ayah/${m.surah.number}:${m.numberInSurah}/quran-uthmani`
-            );
-            const j = await r.json();
-            return j.data?.text ?? "";
-          } catch {
-            return "";
-          }
-        })
-      );
-
-      setResults(
-        matches.map((m: any, i: number) => ({
-          number: m.number,
-          numberInSurah: m.numberInSurah,
-          surah: m.surah,
-          englishText: m.text,
-          arabicText: arabicTexts[i],
-        }))
-      );
-    } catch {
-      setError(true);
-      setResults([]);
-    } finally {
-      setLoading(false);
-    }
+    setResults(searchQuran(q.trim(), 40));
   };
 
   const clearSearch = () => {
     setQuery("");
     setResults([]);
     setSearched(false);
-    setError(false);
     inputRef.current?.focus();
   };
 
@@ -177,7 +116,7 @@ export default function SearchScreen() {
           <TextInput
             ref={inputRef}
             style={[styles.searchInput, { color: colors.foreground }]}
-            placeholder='Search e.g. "mercy", "patience", "guidance"...'
+            placeholder='Search e.g. "mercy", "patience", "light"...'
             placeholderTextColor={colors.mutedForeground}
             value={query}
             onChangeText={setQuery}
@@ -215,42 +154,7 @@ export default function SearchScreen() {
         </TouchableOpacity>
       </View>
 
-      {loading && (
-        <View style={styles.center}>
-          <ActivityIndicator size="large" color={colors.primary} />
-          <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>
-            Searching...
-          </Text>
-        </View>
-      )}
-
-      {!loading && error && (
-        <View style={styles.center}>
-          <Ionicons
-            name="wifi-outline"
-            size={44}
-            color={colors.mutedForeground}
-          />
-          <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>
-            Failed to search. Check your connection.
-          </Text>
-          <TouchableOpacity
-            style={[styles.retryBtn, { backgroundColor: colors.primary }]}
-            onPress={() => doSearch()}
-          >
-            <Text
-              style={[
-                styles.retryText,
-                { color: colors.primaryForeground },
-              ]}
-            >
-              Retry
-            </Text>
-          </TouchableOpacity>
-        </View>
-      )}
-
-      {!loading && !searched && !error && (
+      {!searched && (
         <View style={styles.center}>
           <Ionicons
             name="book-outline"
@@ -268,7 +172,7 @@ export default function SearchScreen() {
         </View>
       )}
 
-      {!loading && searched && !error && results.length === 0 && (
+      {searched && results.length === 0 && (
         <View style={styles.center}>
           <Ionicons
             name="search-outline"
@@ -286,7 +190,7 @@ export default function SearchScreen() {
         </View>
       )}
 
-      {!loading && results.length > 0 && (
+      {results.length > 0 && (
         <FlatList
           data={results}
           keyExtractor={(item) => item.number.toString()}
@@ -360,7 +264,7 @@ export default function SearchScreen() {
                   ]}
                   numberOfLines={3}
                 >
-                  {item.arabicText}
+                  {stripTajweedTags(item.arabicText)}
                 </Text>
               ) : null}
 
@@ -439,13 +343,6 @@ const styles = StyleSheet.create({
     fontFamily: "Inter_400Regular",
     textAlign: "center",
   },
-  retryBtn: {
-    borderRadius: 10,
-    paddingHorizontal: 24,
-    paddingVertical: 10,
-    marginTop: 8,
-  },
-  retryText: { fontSize: 14, fontFamily: "Inter_600SemiBold" },
   resultsCount: {
     fontSize: 13,
     fontFamily: "Inter_400Regular",

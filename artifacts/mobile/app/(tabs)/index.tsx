@@ -1,9 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import React, { useState } from "react";
 import {
-  ActivityIndicator,
   FlatList,
   Platform,
   StyleSheet,
@@ -18,12 +16,7 @@ import { useBookmarks } from "@/context/BookmarkContext";
 import { getArabicFontFamily, useQuranSettings } from "@/context/QuranContext";
 import SurahCard, { SurahMeta } from "@/components/SurahCard";
 import SettingsGearButton from "@/components/SettingsGearButton";
-
-async function fetchSurahs(): Promise<SurahMeta[]> {
-  const res = await fetch("https://api.alquran.cloud/v1/surah");
-  const json = await res.json();
-  return json.data;
-}
+import { SURAH_LIST } from "@/utils/quranData";
 
 const AL_PREFIXES = /^(al-|ash-|an-|ar-|as-|at-|az-|ad-|adh-)/i;
 
@@ -62,13 +55,7 @@ export default function QuranScreen() {
 
   const arabicFont = getArabicFontFamily(settings.fontType);
 
-  const { data: surahs, isLoading, error } = useQuery({
-    queryKey: ["surahs"],
-    queryFn: fetchSurahs,
-    staleTime: 1000 * 60 * 60,
-  });
-
-  const filtered = surahs?.filter((s) => matchesSurah(s, search.trim()));
+  const filtered = SURAH_LIST.filter((s) => matchesSurah(s as SurahMeta, search.trim()));
 
   const topPad = Platform.OS === "web" ? 20 : insets.top;
 
@@ -132,108 +119,87 @@ export default function QuranScreen() {
         </View>
       </View>
 
-      {isLoading && (
-        <View style={styles.center}>
-          <ActivityIndicator size="large" color={colors.primary} />
-        </View>
-      )}
-
-      {error ? (
-        <View style={styles.center}>
-          <Ionicons
-            name="wifi-outline"
-            size={40}
-            color={colors.mutedForeground}
-          />
-          <Text style={[styles.errorText, { color: colors.mutedForeground }]}>
-            Failed to load. Check your connection.
-          </Text>
-        </View>
-      ) : null}
-
-      {filtered && (
-        <FlatList
-          data={filtered}
-          keyExtractor={(s) => s.number.toString()}
-          contentInsetAdjustmentBehavior="automatic"
-          windowSize={7}
-          maxToRenderPerBatch={10}
-          initialNumToRender={12}
-          removeClippedSubviews={Platform.OS !== "web"}
-          ListHeaderComponent={
-            lastRead ? (
-              <TouchableOpacity
-                style={[
-                  styles.continueCard,
-                  {
-                    backgroundColor: colors.primary,
-                    marginHorizontal: 16,
-                    marginTop: 12,
-                    marginBottom: 4,
-                  },
-                ]}
-                onPress={() =>
-                  router.push({
-                    pathname: "/surah/[id]",
-                    params: {
-                      id: lastRead.surahNumber.toString(),
-                      scrollToAyah: lastRead.ayahNumber.toString(),
-                    },
-                  })
-                }
-              >
-                <View style={styles.continueContent}>
-                  <Ionicons
-                    name="book-outline"
-                    size={20}
-                    color={colors.primaryForeground}
-                  />
-                  <View style={styles.continueText}>
-                    <Text
-                      style={[
-                        styles.continueLabel,
-                        { color: colors.primaryForeground, opacity: 0.8 },
-                      ]}
-                    >
-                      Continue Reading
-                    </Text>
-                    <Text
-                      style={[
-                        styles.continueTitle,
-                        { color: colors.primaryForeground },
-                      ]}
-                    >
-                      {lastRead.surahEnglishName} · Ayah {lastRead.ayahNumber}
-                    </Text>
-                  </View>
-                </View>
-                <Ionicons
-                  name="chevron-forward"
-                  size={20}
-                  color={colors.primaryForeground}
-                />
-              </TouchableOpacity>
-            ) : (
-              <View style={{ height: 8 }} />
-            )
-          }
-          renderItem={({ item }) => (
-            <SurahCard
-              surah={item}
+      <FlatList
+        data={filtered}
+        keyExtractor={(s) => s.number.toString()}
+        contentInsetAdjustmentBehavior="automatic"
+        windowSize={7}
+        maxToRenderPerBatch={10}
+        initialNumToRender={12}
+        removeClippedSubviews={Platform.OS !== "web"}
+        ListHeaderComponent={
+          lastRead ? (
+            <TouchableOpacity
+              style={[
+                styles.continueCard,
+                {
+                  backgroundColor: colors.primary,
+                  marginHorizontal: 16,
+                  marginTop: 12,
+                  marginBottom: 4,
+                },
+              ]}
               onPress={() =>
                 router.push({
                   pathname: "/surah/[id]",
-                  params: { id: item.number.toString() },
+                  params: {
+                    id: lastRead.surahNumber.toString(),
+                    scrollToAyah: lastRead.ayahNumber.toString(),
+                  },
                 })
               }
-            />
-          )}
-          contentContainerStyle={{
-            paddingBottom: Platform.OS === "web" ? 84 + 34 : 100,
-          }}
-          showsVerticalScrollIndicator={false}
-        />
-      )}
+            >
+              <View style={styles.continueContent}>
+                <Ionicons
+                  name="book-outline"
+                  size={20}
+                  color={colors.primaryForeground}
+                />
+                <View style={styles.continueText}>
+                  <Text
+                    style={[
+                      styles.continueLabel,
+                      { color: colors.primaryForeground, opacity: 0.8 },
+                    ]}
+                  >
+                    Continue Reading
+                  </Text>
+                  <Text
+                    style={[
+                      styles.continueTitle,
+                      { color: colors.primaryForeground },
+                    ]}
+                  >
+                    {lastRead.surahEnglishName} · Ayah {lastRead.ayahNumber}
+                  </Text>
+                </View>
+              </View>
+              <Ionicons
+                name="chevron-forward"
+                size={20}
+                color={colors.primaryForeground}
+              />
+            </TouchableOpacity>
+          ) : (
+            <View style={{ height: 8 }} />
+          )
+        }
+        renderItem={({ item }) => (
+          <SurahCard
+            surah={item as SurahMeta}
+            onPress={() =>
+              router.push({
+                pathname: "/surah/[id]",
+                params: { id: item.number.toString() },
+              })
+            }
+          />
+        )}
+        contentContainerStyle={{
+          paddingBottom: Platform.OS === "web" ? 84 + 34 : 100,
+        }}
+        showsVerticalScrollIndicator={false}
+      />
     </View>
   );
 }
@@ -289,17 +255,6 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontFamily: "Inter_400Regular",
     padding: 0,
-  },
-  center: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 12,
-  },
-  errorText: {
-    fontSize: 15,
-    fontFamily: "Inter_400Regular",
-    textAlign: "center",
   },
   continueCard: {
     borderRadius: 14,

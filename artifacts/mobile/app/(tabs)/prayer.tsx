@@ -1,12 +1,13 @@
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { Coordinates, PrayerTimes as AdhanPrayerTimes, CalculationMethod } from "adhan";
 import * as Location from "expo-location";
 import React, { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
   Animated,
-  FlatList,
+  Keyboard,
   Modal,
   Platform,
   Pressable,
@@ -37,7 +38,6 @@ interface PrayerTimes {
   Asr: string;
   Maghrib: string;
   Isha: string;
-  Midnight: string;
 }
 
 interface StoredLocation {
@@ -53,83 +53,57 @@ interface PrayerInfo {
   key: keyof PrayerTimes;
 }
 
-interface NominatimResult {
-  display_name: string;
-  lat: string;
-  lon: string;
-  address?: {
-    city?: string;
-    town?: string;
-    village?: string;
-    county?: string;
-    state?: string;
-    country?: string;
+function fmt(d: Date): string {
+  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
+}
+
+function getAdhanParams(lat: number, lng: number): { params: ReturnType<typeof CalculationMethod.MuslimWorldLeague>; name: string } {
+  if (lat >= 15 && lat <= 83 && lng >= -170 && lng <= -52)
+    return { params: CalculationMethod.NorthAmerica(), name: "ISNA (North America)" };
+  if (lat >= 12 && lat <= 32 && lng >= 32 && lng <= 60)
+    return { params: CalculationMethod.UmmAlQura(), name: "Umm Al-Qura, Mecca" };
+  if (lat >= 25 && lat <= 40 && lng >= 44 && lng <= 64)
+    return { params: CalculationMethod.Tehran(), name: "Institute of Geophysics, Tehran" };
+  if (lat >= 6 && lat <= 38 && lng >= 60 && lng <= 98)
+    return { params: CalculationMethod.Karachi(), name: "University of Islamic Sciences, Karachi" };
+  if (lat >= -10 && lat <= 25 && lng >= 95 && lng <= 141)
+    return { params: CalculationMethod.Singapore(), name: "MUIS (Singapore)" };
+  if (lat >= 36 && lat <= 42 && lng >= 26 && lng <= 45)
+    return { params: CalculationMethod.Turkey(), name: "Diyanet İşleri Başkanlığı" };
+  if (lat >= 20 && lat <= 35 && lng >= 15 && lng <= 38)
+    return { params: CalculationMethod.Egyptian(), name: "Egyptian General Authority" };
+  if (lat >= 27 && lat <= 36 && lng >= -17 && lng <= -1)
+    return { params: CalculationMethod.MuslimWorldLeague(), name: "Muslim World League" };
+  return { params: CalculationMethod.MuslimWorldLeague(), name: "Muslim World League" };
+}
+
+function calculatePrayerTimesLocal(lat: number, lng: number): { times: PrayerTimes; methodName: string } {
+  const coordinates = new Coordinates(lat, lng);
+  const { params, name: methodName } = getAdhanParams(lat, lng);
+  const date = new Date();
+  const pt = new AdhanPrayerTimes(coordinates, date, params);
+  return {
+    times: {
+      Fajr: fmt(pt.fajr),
+      Sunrise: fmt(pt.sunrise),
+      Dhuhr: fmt(pt.dhuhr),
+      Asr: fmt(pt.asr),
+      Maghrib: fmt(pt.maghrib),
+      Isha: fmt(pt.isha),
+    },
+    methodName,
   };
 }
 
 function getNextPrayer(times: PrayerTimes): string {
   const now = new Date();
   const currentMins = now.getHours() * 60 + now.getMinutes();
-  const prayers: [keyof PrayerTimes][] = [
-    ["Fajr"],
-    ["Sunrise"],
-    ["Dhuhr"],
-    ["Asr"],
-    ["Maghrib"],
-    ["Isha"],
-  ];
-  for (const [key] of prayers) {
+  const prayers: (keyof PrayerTimes)[] = ["Fajr", "Sunrise", "Dhuhr", "Asr", "Maghrib", "Isha"];
+  for (const key of prayers) {
     const [h, m] = times[key].split(":").map(Number);
     if (h * 60 + m > currentMins) return key;
   }
   return "Fajr";
-}
-
-interface CalcMethod {
-  method: number;
-  name: string;
-}
-
-function getCalcMethod(lat: number, lng: number): CalcMethod {
-  if (lat >= 15 && lat <= 83 && lng >= -170 && lng <= -52)
-    return { method: 2, name: "ISNA (North America)" };
-  if (lat >= 12 && lat <= 32 && lng >= 32 && lng <= 60)
-    return { method: 4, name: "Umm Al-Qura, Mecca" };
-  if (lat >= 25 && lat <= 40 && lng >= 44 && lng <= 64)
-    return { method: 7, name: "Geophysics Institute, Tehran" };
-  if (lat >= 6 && lat <= 38 && lng >= 60 && lng <= 98)
-    return { method: 1, name: "University of Islamic Sciences, Karachi" };
-  if (lat >= -10 && lat <= 25 && lng >= 95 && lng <= 141)
-    return { method: 11, name: "MUIS (Singapore)" };
-  if (lat >= 36 && lat <= 42 && lng >= 26 && lng <= 45)
-    return { method: 13, name: "Diyanet İşleri Başkanlığı" };
-  if (lat >= 20 && lat <= 35 && lng >= 15 && lng <= 38)
-    return { method: 5, name: "Egyptian General Authority" };
-  if (lat >= 27 && lat <= 36 && lng >= -17 && lng <= -1)
-    return { method: 17, name: "Morocco" };
-  return { method: 3, name: "Muslim World League" };
-}
-
-async function fetchPrayerTimesForCoords(
-  lat: number,
-  lng: number,
-  method: number
-): Promise<PrayerTimes> {
-  const timestamp = Math.floor(Date.now() / 1000);
-  const res = await fetch(
-    `https://api.aladhan.com/v1/timings/${timestamp}?latitude=${lat}&longitude=${lng}&method=${method}`
-  );
-  const json = await res.json();
-  return json.data.timings as PrayerTimes;
-}
-
-function formatSuggestionCity(item: NominatimResult): string {
-  const a = item.address;
-  const city = a?.city || a?.town || a?.village || a?.county;
-  const state = a?.state;
-  const country = a?.country;
-  const parts = [city, state, country].filter(Boolean);
-  return parts.length > 0 ? parts.join(", ") : item.display_name.split(",")[0].trim();
 }
 
 export default function PrayerScreen() {
@@ -143,13 +117,12 @@ export default function PrayerScreen() {
   const [nextPrayer, setNextPrayer] = useState<string>("");
   const [notifsEnabled, setNotifsEnabled] = useState(false);
   const [showManualModal, setShowManualModal] = useState(false);
-  const [manualInput, setManualInput] = useState("");
+  const [latInput, setLatInput] = useState("");
+  const [lngInput, setLngInput] = useState("");
+  const [cityInput, setCityInput] = useState("");
   const [manualLoading, setManualLoading] = useState(false);
-  const [suggestions, setSuggestions] = useState<NominatimResult[]>([]);
-  const [suggestionsLoading, setSuggestionsLoading] = useState(false);
   const [webToast, setWebToast] = useState<string | null>(null);
   const webToastAnim = useRef(new Animated.Value(0)).current;
-  const autocompleteTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const showWebToast = (msg: string) => {
     setWebToast(msg);
@@ -191,9 +164,7 @@ export default function PrayerScreen() {
       if (Platform.OS !== "web") {
         const { status } = await Location.requestForegroundPermissionsAsync();
         if (status !== "granted") {
-          setError(
-            "Location permission denied. Please enable location access or enter a city manually."
-          );
+          setError("Location permission denied. Please enable location access or enter coordinates manually.");
           setLoading(false);
           return;
         }
@@ -203,17 +174,13 @@ export default function PrayerScreen() {
         lat = loc.coords.latitude;
         lng = loc.coords.longitude;
 
-        const addrs = await Location.reverseGeocodeAsync({
-          latitude: lat,
-          longitude: lng,
-        });
-        const a = addrs[0];
-        detectedCity =
-          a?.city ||
-          a?.district ||
-          a?.subregion ||
-          a?.region ||
-          "Your Location";
+        try {
+          const addrs = await Location.reverseGeocodeAsync({ latitude: lat, longitude: lng });
+          const a = addrs[0];
+          detectedCity = a?.city || a?.district || a?.subregion || a?.region || "Your Location";
+        } catch {
+          detectedCity = "Your Location";
+        }
       } else {
         const pos = await new Promise<GeolocationPosition>((res, rej) =>
           navigator.geolocation.getCurrentPosition(res, rej, { timeout: 10000 })
@@ -229,7 +196,7 @@ export default function PrayerScreen() {
       );
       await loadTimes(lat, lng, detectedCity);
     } catch {
-      setError("Could not detect location. Please enter your city manually.");
+      setError("Could not detect location. Please enter your coordinates manually.");
       setLoading(false);
     }
   };
@@ -238,8 +205,7 @@ export default function PrayerScreen() {
     setLoading(true);
     setError(null);
     try {
-      const { method, name: methodName } = getCalcMethod(lat, lng);
-      const times = await fetchPrayerTimesForCoords(lat, lng, method);
+      const { times, methodName } = calculatePrayerTimesLocal(lat, lng);
       setPrayerTimes(times);
       setCity(cityName);
       setCalcMethodName(methodName);
@@ -257,72 +223,9 @@ export default function PrayerScreen() {
         await schedulePrayerNotifications(prayerList, cityName);
       }
     } catch {
-      setError("Failed to fetch prayer times. Check your connection.");
+      setError("Failed to calculate prayer times. Please try again.");
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleManualInputChange = (text: string) => {
-    setManualInput(text);
-    setSuggestions([]);
-    if (autocompleteTimer.current) clearTimeout(autocompleteTimer.current);
-    if (text.trim().length < 2) {
-      setSuggestionsLoading(false);
-      return;
-    }
-    setSuggestionsLoading(true);
-    autocompleteTimer.current = setTimeout(async () => {
-      try {
-        const encoded = encodeURIComponent(text.trim());
-        const res = await fetch(
-          `https://nominatim.openstreetmap.org/search?q=${encoded}&format=json&limit=6&addressdetails=1`,
-          { headers: { "User-Agent": "QuranApp/1.0" } }
-        );
-        const json: NominatimResult[] = await res.json();
-        setSuggestions(json);
-      } catch {
-        setSuggestions([]);
-      } finally {
-        setSuggestionsLoading(false);
-      }
-    }, 350);
-  };
-
-  const selectSuggestion = async (item: NominatimResult) => {
-    const lat = parseFloat(item.lat);
-    const lng = parseFloat(item.lon);
-    const cityName = formatSuggestionCity(item);
-    setSuggestions([]);
-    setManualInput("");
-    setShowManualModal(false);
-    await AsyncStorage.setItem(
-      LOCATION_STORAGE_KEY,
-      JSON.stringify({ lat, lng, city: cityName })
-    );
-    await loadTimes(lat, lng, cityName);
-  };
-
-  const handleManualSearch = async () => {
-    if (!manualInput.trim()) return;
-    setManualLoading(true);
-    try {
-      const encoded = encodeURIComponent(manualInput.trim());
-      const res = await fetch(
-        `https://nominatim.openstreetmap.org/search?q=${encoded}&format=json&limit=1&addressdetails=1`,
-        { headers: { "User-Agent": "QuranApp/1.0" } }
-      );
-      const json: NominatimResult[] = await res.json();
-      if (!json.length) {
-        Alert.alert("Not Found", "Could not find that location. Try a different spelling.");
-        setManualLoading(false);
-        return;
-      }
-      await selectSuggestion(json[0]);
-    } catch {
-      Alert.alert("Error", "Failed to search. Check your connection.");
-    } finally {
-      setManualLoading(false);
     }
   };
 
@@ -333,6 +236,30 @@ export default function PrayerScreen() {
     await detectLocation();
   };
 
+  const handleManualCoords = async () => {
+    const lat = parseFloat(latInput.trim());
+    const lng = parseFloat(lngInput.trim());
+    if (isNaN(lat) || isNaN(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+      Alert.alert("Invalid Coordinates", "Please enter valid latitude (-90 to 90) and longitude (-180 to 180).");
+      return;
+    }
+    const cityName = cityInput.trim() || `${lat.toFixed(2)}, ${lng.toFixed(2)}`;
+    setManualLoading(true);
+    Keyboard.dismiss();
+    try {
+      await AsyncStorage.setItem(LOCATION_STORAGE_KEY, JSON.stringify({ lat, lng, city: cityName }));
+      setShowManualModal(false);
+      setLatInput("");
+      setLngInput("");
+      setCityInput("");
+      await loadTimes(lat, lng, cityName);
+    } catch {
+      Alert.alert("Error", "Failed to set location. Please try again.");
+    } finally {
+      setManualLoading(false);
+    }
+  };
+
   const toggleNotifications = async (val: boolean) => {
     if (Platform.OS === "web") {
       showWebToast("Prayer reminders require the mobile app");
@@ -341,10 +268,7 @@ export default function PrayerScreen() {
     if (val) {
       const granted = await requestNotificationPermissions();
       if (!granted) {
-        Alert.alert(
-          "Permission Needed",
-          "Please allow notifications in your device settings."
-        );
+        Alert.alert("Permission Needed", "Please allow notifications in your device settings.");
         return;
       }
       setNotifsEnabled(true);
@@ -358,10 +282,7 @@ export default function PrayerScreen() {
           { name: "Isha", time: prayerTimes.Isha },
         ];
         await schedulePrayerNotifications(prayerList, city);
-        Alert.alert(
-          "Notifications On",
-          "You'll receive reminders for each prayer time. 🕌"
-        );
+        Alert.alert("Notifications On", "You'll receive reminders for each prayer time. 🕌");
       }
     } else {
       setNotifsEnabled(false);
@@ -399,7 +320,7 @@ export default function PrayerScreen() {
               onPress={() => setShowManualModal(true)}
               style={[styles.iconBtn, { backgroundColor: colors.secondary }]}
             >
-              <Ionicons name="search-outline" size={18} color={colors.primary} />
+              <Ionicons name="location-outline" size={18} color={colors.primary} />
             </TouchableOpacity>
             <TouchableOpacity
               onPress={handleDetectLocation}
@@ -435,18 +356,14 @@ export default function PrayerScreen() {
           <View style={styles.center}>
             <ActivityIndicator size="large" color={colors.primary} />
             <Text style={[styles.loadingText, { color: colors.mutedForeground }]}>
-              Getting prayer times...
+              Calculating prayer times...
             </Text>
           </View>
         )}
 
         {error && !loading && (
           <View style={styles.center}>
-            <Ionicons
-              name="location-outline"
-              size={44}
-              color={colors.mutedForeground}
-            />
+            <Ionicons name="location-outline" size={44} color={colors.mutedForeground} />
             <Text style={[styles.errorText, { color: colors.mutedForeground }]}>
               {error}
             </Text>
@@ -463,7 +380,7 @@ export default function PrayerScreen() {
               onPress={() => setShowManualModal(true)}
             >
               <Text style={[styles.secondaryBtnText, { color: colors.primary }]}>
-                Enter City Manually
+                Enter Coordinates
               </Text>
             </TouchableOpacity>
           </View>
@@ -500,9 +417,7 @@ export default function PrayerScreen() {
                         {prayer.name}
                       </Text>
                       {isNext && (
-                        <View
-                          style={[styles.nextBadge, { backgroundColor: colors.accent }]}
-                        >
+                        <View style={[styles.nextBadge, { backgroundColor: colors.accent }]}>
                           <Text style={[styles.nextText, { color: colors.accentForeground }]}>
                             Next
                           </Text>
@@ -554,8 +469,8 @@ export default function PrayerScreen() {
             </View>
 
             <Text style={[styles.disclaimer, { color: colors.mutedForeground }]}>
-              Times calculated using {calcMethodName}. Verify with your local
-              mosque for Friday prayers.
+              Times calculated locally using {calcMethodName}. Verify with your
+              local mosque for Friday prayers.
             </Text>
           </>
         )}
@@ -584,19 +499,11 @@ export default function PrayerScreen() {
         visible={showManualModal}
         transparent
         animationType="slide"
-        onRequestClose={() => {
-          setShowManualModal(false);
-          setSuggestions([]);
-          setManualInput("");
-        }}
+        onRequestClose={() => setShowManualModal(false)}
       >
         <Pressable
           style={styles.modalOverlay}
-          onPress={() => {
-            setShowManualModal(false);
-            setSuggestions([]);
-            setManualInput("");
-          }}
+          onPress={() => setShowManualModal(false)}
         >
           <Pressable
             style={[
@@ -605,105 +512,96 @@ export default function PrayerScreen() {
             ]}
             onPress={() => {}}
           >
-            <View
-              style={[styles.sheetHandle, { backgroundColor: colors.border }]}
-            />
+            <View style={[styles.sheetHandle, { backgroundColor: colors.border }]} />
             <Text style={[styles.modalTitle, { color: colors.foreground }]}>
-              Search Location
+              Change Location
             </Text>
-            <Text
-              style={[styles.modalDesc, { color: colors.mutedForeground }]}
+            <Text style={[styles.modalDesc, { color: colors.mutedForeground }]}>
+              Use GPS for automatic detection, or enter your coordinates manually.
+            </Text>
+
+            <TouchableOpacity
+              style={[styles.gpsBtn, { backgroundColor: colors.primary }]}
+              onPress={() => {
+                setShowManualModal(false);
+                handleDetectLocation();
+              }}
             >
-              Type your city name to get accurate prayer times.
-            </Text>
+              <Ionicons name="locate" size={18} color={colors.primaryForeground} />
+              <Text style={[styles.gpsBtnText, { color: colors.primaryForeground }]}>
+                Use My GPS Location
+              </Text>
+            </TouchableOpacity>
+
+            <View style={styles.dividerRow}>
+              <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
+              <Text style={[styles.dividerText, { color: colors.mutedForeground }]}>or enter manually</Text>
+              <View style={[styles.dividerLine, { backgroundColor: colors.border }]} />
+            </View>
+
             <View
               style={[
-                styles.searchBar,
+                styles.inputField,
                 { backgroundColor: colors.background, borderColor: colors.border },
               ]}
             >
-              <Ionicons name="search" size={18} color={colors.mutedForeground} />
               <TextInput
-                style={[styles.searchInput, { color: colors.foreground }]}
-                placeholder="e.g. Glasgow, Cairo, Karachi..."
+                style={[styles.inputText, { color: colors.foreground }]}
+                placeholder="Latitude (e.g. 51.5074)"
                 placeholderTextColor={colors.mutedForeground}
-                value={manualInput}
-                onChangeText={handleManualInputChange}
-                onSubmitEditing={handleManualSearch}
-                returnKeyType="search"
-                autoFocus
+                value={latInput}
+                onChangeText={setLatInput}
+                keyboardType="numeric"
               />
-              {suggestionsLoading && (
-                <ActivityIndicator size="small" color={colors.mutedForeground} />
-              )}
-              {manualInput.length > 0 && (
-                <TouchableOpacity onPress={() => { setManualInput(""); setSuggestions([]); }}>
-                  <Ionicons name="close-circle" size={18} color={colors.mutedForeground} />
-                </TouchableOpacity>
-              )}
             </View>
 
-            {suggestions.length > 0 && (
-              <View
-                style={[
-                  styles.suggestionList,
-                  { backgroundColor: colors.background, borderColor: colors.border },
-                ]}
-              >
-                <FlatList
-                  data={suggestions}
-                  keyExtractor={(_, i) => i.toString()}
-                  scrollEnabled={false}
-                  renderItem={({ item, index }) => (
-                    <TouchableOpacity
-                      style={[
-                        styles.suggestionItem,
-                        {
-                          borderBottomColor: colors.border,
-                          borderBottomWidth: index < suggestions.length - 1
-                            ? StyleSheet.hairlineWidth
-                            : 0,
-                        },
-                      ]}
-                      onPress={() => selectSuggestion(item)}
-                    >
-                      <Ionicons name="location-outline" size={14} color={colors.accent} />
-                      <Text
-                        style={[styles.suggestionText, { color: colors.foreground }]}
-                        numberOfLines={1}
-                      >
-                        {formatSuggestionCity(item)}
-                      </Text>
-                      <Text
-                        style={[styles.suggestionCountry, { color: colors.mutedForeground }]}
-                        numberOfLines={1}
-                      >
-                        {item.address?.country ?? ""}
-                      </Text>
-                    </TouchableOpacity>
-                  )}
-                />
-              </View>
-            )}
+            <View
+              style={[
+                styles.inputField,
+                { backgroundColor: colors.background, borderColor: colors.border },
+              ]}
+            >
+              <TextInput
+                style={[styles.inputText, { color: colors.foreground }]}
+                placeholder="Longitude (e.g. -0.1278)"
+                placeholderTextColor={colors.mutedForeground}
+                value={lngInput}
+                onChangeText={setLngInput}
+                keyboardType="numeric"
+              />
+            </View>
+
+            <View
+              style={[
+                styles.inputField,
+                { backgroundColor: colors.background, borderColor: colors.border },
+              ]}
+            >
+              <TextInput
+                style={[styles.inputText, { color: colors.foreground }]}
+                placeholder="City name (optional)"
+                placeholderTextColor={colors.mutedForeground}
+                value={cityInput}
+                onChangeText={setCityInput}
+              />
+            </View>
 
             <TouchableOpacity
               style={[
                 styles.searchBtn,
                 {
                   backgroundColor: colors.primary,
-                  opacity: manualInput.trim() ? 1 : 0.5,
+                  opacity: latInput.trim() && lngInput.trim() ? 1 : 0.5,
                 },
               ]}
-              onPress={handleManualSearch}
-              disabled={!manualInput.trim() || manualLoading}
+              onPress={handleManualCoords}
+              disabled={!latInput.trim() || !lngInput.trim() || manualLoading}
             >
               {manualLoading ? (
                 <ActivityIndicator size="small" color={colors.primaryForeground} />
               ) : (
-                <Text
-                  style={[styles.searchBtnText, { color: colors.primaryForeground }]}
-                >
-                  Find Prayer Times
+                <Text style={[styles.searchBtnText, { color: colors.primaryForeground }]}>
+                  Calculate Prayer Times
                 </Text>
               )}
             </TouchableOpacity>
@@ -778,11 +676,7 @@ const styles = StyleSheet.create({
   prayerLeft: { flexDirection: "row", alignItems: "center", gap: 12 },
   prayerName: { fontSize: 16, fontFamily: "Inter_500Medium" },
   nextBadge: { borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 },
-  nextText: {
-    fontSize: 11,
-    fontFamily: "Inter_600SemiBold",
-    letterSpacing: 0.5,
-  },
+  nextText: { fontSize: 11, fontFamily: "Inter_600SemiBold", letterSpacing: 0.5 },
   prayerTime: { fontSize: 18, fontFamily: "Inter_600SemiBold" },
   notifCard: {
     borderRadius: 14,
@@ -820,11 +714,7 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 8,
   },
-  webToastText: {
-    fontSize: 14,
-    fontFamily: "Inter_500Medium",
-    flex: 1,
-  },
+  webToastText: { fontSize: 14, fontFamily: "Inter_500Medium", flex: 1 },
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.5)",
@@ -847,42 +737,33 @@ const styles = StyleSheet.create({
   },
   modalTitle: { fontSize: 20, fontFamily: "Inter_600SemiBold" },
   modalDesc: { fontSize: 14, fontFamily: "Inter_400Regular", lineHeight: 20 },
-  searchBar: {
+  gpsBtn: {
+    borderRadius: 12,
+    paddingVertical: 14,
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center",
     gap: 8,
+  },
+  gpsBtnText: { fontSize: 15, fontFamily: "Inter_600SemiBold" },
+  dividerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginVertical: 4,
+  },
+  dividerLine: { flex: 1, height: 1 },
+  dividerText: { fontSize: 12, fontFamily: "Inter_400Regular" },
+  inputField: {
     borderRadius: 12,
     borderWidth: 1,
-    paddingHorizontal: 12,
+    paddingHorizontal: 14,
     paddingVertical: 12,
   },
-  searchInput: {
-    flex: 1,
+  inputText: {
     fontSize: 15,
     fontFamily: "Inter_400Regular",
     padding: 0,
-  },
-  suggestionList: {
-    borderRadius: 12,
-    borderWidth: 1,
-    overflow: "hidden",
-  },
-  suggestionItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    gap: 8,
-  },
-  suggestionText: {
-    fontSize: 14,
-    fontFamily: "Inter_500Medium",
-    flex: 1,
-  },
-  suggestionCountry: {
-    fontSize: 12,
-    fontFamily: "Inter_400Regular",
-    flexShrink: 0,
   },
   searchBtn: {
     borderRadius: 12,
@@ -890,6 +771,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     minHeight: 50,
+    marginTop: 4,
   },
   searchBtnText: { fontSize: 15, fontFamily: "Inter_600SemiBold" },
 });

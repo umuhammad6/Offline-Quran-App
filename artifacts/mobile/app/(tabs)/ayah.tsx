@@ -1,5 +1,4 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { useQuery } from "@tanstack/react-query";
 import { LinearGradient } from "expo-linear-gradient";
 import * as MediaLibrary from "expo-media-library";
 import * as Sharing from "expo-sharing";
@@ -20,29 +19,14 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
 import { Ionicons } from "@expo/vector-icons";
 import { getArabicFontFamily, useQuranSettings } from "@/context/QuranContext";
+import {
+  getAyahByGlobalNumber,
+  stripTajweedTags,
+  type AyahDetails,
+} from "@/utils/quranData";
 
 const TOTAL_AYAHS = 6236;
 const STORAGE_KEY = "quran_ayah_of_day";
-
-interface AyahOfDay {
-  date: string;
-  number: number;
-}
-
-interface AyahDetails {
-  number: number;
-  text: string;
-  numberInSurah: number;
-  surah: {
-    number: number;
-    name: string;
-    englishName: string;
-    englishNameTranslation: string;
-    numberOfAyahs: number;
-    revelationType: string;
-  };
-  translation: string;
-}
 
 function getTodayString(): string {
   const d = new Date();
@@ -53,7 +37,7 @@ async function getDailyAyahNumber(): Promise<number> {
   try {
     const stored = await AsyncStorage.getItem(STORAGE_KEY);
     if (stored) {
-      const parsed: AyahOfDay = JSON.parse(stored);
+      const parsed: { date: string; number: number } = JSON.parse(stored);
       if (parsed.date === getTodayString()) {
         return parsed.number;
       }
@@ -67,26 +51,11 @@ async function getDailyAyahNumber(): Promise<number> {
   return num;
 }
 
-async function fetchAyahDetails(number: number): Promise<AyahDetails> {
-  const res = await fetch(
-    `https://api.alquran.cloud/v1/ayah/${number}/editions/quran-uthmani,en.sahih`
-  );
-  const json = await res.json();
-  const [arabic, translation] = json.data;
-  return {
-    number,
-    text: arabic.text,
-    numberInSurah: arabic.numberInSurah,
-    surah: arabic.surah,
-    translation: translation.text,
-  };
-}
-
 export default function AyahOfDayScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { settings } = useQuranSettings();
-  const [ayahNumber, setAyahNumber] = useState<number | null>(null);
+  const [data, setData] = useState<AyahDetails | null>(null);
   const [saving, setSaving] = useState(false);
   const [selectedBg, setSelectedBg] = useState("#FFFFFF");
   const cardRef = useRef<View>(null);
@@ -113,15 +82,21 @@ export default function AyahOfDayScreen() {
   const arabicFont = getArabicFontFamily(settings.fontType);
 
   useEffect(() => {
-    getDailyAyahNumber().then(setAyahNumber);
+    getDailyAyahNumber().then((num) => {
+      const ayah = getAyahByGlobalNumber(num);
+      setData(ayah);
+    });
   }, []);
 
-  const { data, isLoading, error, refetch } = useQuery({
-    queryKey: ["ayah-of-day", ayahNumber],
-    queryFn: () => fetchAyahDetails(ayahNumber!),
-    enabled: ayahNumber !== null,
-    staleTime: 1000 * 60 * 60 * 12,
-  });
+  const refresh = () => {
+    const num = Math.floor(Math.random() * TOTAL_AYAHS) + 1;
+    AsyncStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({ date: getTodayString(), number: num })
+    );
+    const ayah = getAyahByGlobalNumber(num);
+    setData(ayah);
+  };
 
   const handleSaveAsImage = async (mode: "share" | "save") => {
     if (!cardRef.current || !data) return;
@@ -163,7 +138,6 @@ export default function AyahOfDayScreen() {
         }
       }
     } catch (err) {
-      console.error("captureRef error:", err);
       Alert.alert("Error", "Failed to capture the image. Please try again.");
     } finally {
       setSaving(false);
@@ -172,6 +146,8 @@ export default function AyahOfDayScreen() {
 
   const topPad = Platform.OS === "web" ? 20 : insets.top;
   const bottomPad = Platform.OS === "web" ? 84 + 34 : 100;
+
+  const cleanArabic = data ? stripTajweedTags(data.text) : "";
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -188,7 +164,12 @@ export default function AyahOfDayScreen() {
         <Text style={[styles.screenTitle, { color: colors.foreground }]}>
           Ayah of the Day
         </Text>
-        <SettingsGearButton />
+        <View style={{ flexDirection: "row", gap: 12 }}>
+          <TouchableOpacity onPress={refresh}>
+            <Ionicons name="refresh" size={22} color={colors.primary} />
+          </TouchableOpacity>
+          <SettingsGearButton />
+        </View>
       </View>
 
       <ScrollView
@@ -232,32 +213,9 @@ export default function AyahOfDayScreen() {
           </View>
         </LinearGradient>
 
-        {(isLoading || ayahNumber === null) && (
+        {!data && (
           <View style={styles.center}>
             <ActivityIndicator size="large" color={colors.primary} />
-          </View>
-        )}
-
-        {error && (
-          <View style={styles.center}>
-            <Ionicons
-              name="wifi-outline"
-              size={40}
-              color={colors.mutedForeground}
-            />
-            <Text style={[styles.errorText, { color: colors.mutedForeground }]}>
-              Failed to load. Tap to retry.
-            </Text>
-            <TouchableOpacity
-              style={[styles.retryBtn, { backgroundColor: colors.primary }]}
-              onPress={() => refetch()}
-            >
-              <Text
-                style={[styles.retryText, { color: colors.primaryForeground }]}
-              >
-                Retry
-              </Text>
-            </TouchableOpacity>
           </View>
         )}
 
@@ -278,7 +236,6 @@ export default function AyahOfDayScreen() {
               </Text>
             </View>
 
-            {/* Capturable card */}
             <View
               ref={cardRef}
               style={[
@@ -308,7 +265,7 @@ export default function AyahOfDayScreen() {
                   },
                 ]}
               >
-                {data.text}
+                {cleanArabic}
               </Text>
 
               <View
@@ -331,7 +288,6 @@ export default function AyahOfDayScreen() {
               </Text>
             </View>
 
-            {/* Background colour picker */}
             <View style={styles.bgPickerContainer}>
               <Text style={[styles.bgPickerLabel, { color: colors.mutedForeground }]}>
                 Card Background
@@ -452,17 +408,6 @@ const styles = StyleSheet.create({
     paddingVertical: 40,
     gap: 12,
   },
-  errorText: {
-    fontSize: 15,
-    fontFamily: "Inter_400Regular",
-    textAlign: "center",
-  },
-  retryBtn: {
-    borderRadius: 10,
-    paddingHorizontal: 24,
-    paddingVertical: 10,
-  },
-  retryText: { fontSize: 14, fontFamily: "Inter_600SemiBold" },
   surahBadge: {
     borderRadius: 10,
     borderWidth: 1,
@@ -504,13 +449,11 @@ const styles = StyleSheet.create({
     fontFamily: "Inter_400Regular",
     lineHeight: 24,
     textAlign: "center",
-    color: "#1A1A1A",
   },
   referenceText: {
     fontSize: 12,
     fontFamily: "Inter_500Medium",
     textAlign: "center",
-    color: "#6B7280",
   },
   imageActions: {
     flexDirection: "row",

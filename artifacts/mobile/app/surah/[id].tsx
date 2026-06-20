@@ -35,6 +35,10 @@ import SettingsGearButton from "@/components/SettingsGearButton";
 import { useBookmarks } from "@/context/BookmarkContext";
 import { AyahData } from "@/components/AyahItem";
 import TajweedText, { stripTajweedTags } from "@/components/TajweedText";
+import {
+  getSurahArabic,
+  getSurahTranslation,
+} from "@/utils/quranData";
 
 interface ApiAyah {
   number: number;
@@ -53,15 +57,18 @@ interface SurahApiResponse {
   ayahs: ApiAyah[];
 }
 
-async function fetchSurahEdition(
-  surahId: number,
-  edition: string
-): Promise<SurahApiResponse> {
-  const res = await fetch(
-    `https://api.alquran.cloud/v1/surah/${surahId}/${edition}`
-  );
-  const json = await res.json();
-  return json.data;
+function fetchLocalSurah(surahId: number): SurahApiResponse | null {
+  return getSurahArabic(surahId) as SurahApiResponse | null;
+}
+
+function fetchLocalTranslation(surahId: number): SurahApiResponse | null {
+  const arabic = getSurahArabic(surahId);
+  const texts = getSurahTranslation(surahId);
+  if (!arabic) return null;
+  return {
+    ...arabic,
+    ayahs: arabic.ayahs.map((a, i) => ({ ...a, text: texts[i] ?? "" })),
+  } as SurahApiResponse;
 }
 
 async function fetchAyahTafseer(
@@ -121,16 +128,16 @@ export default function SurahScreen() {
   );
 
   const { data: arabicData, isLoading: arabicLoading } = useQuery({
-    queryKey: ["surah-arabic", surahId, arabicEdition],
-    queryFn: () => fetchSurahEdition(surahId, arabicEdition),
-    staleTime: 1000 * 60 * 60,
+    queryKey: ["surah-arabic-local", surahId],
+    queryFn: () => Promise.resolve(fetchLocalSurah(surahId)),
+    staleTime: Infinity,
   });
 
   const { data: translationData } = useQuery({
-    queryKey: ["surah-translation", surahId, settings.translationEdition],
-    queryFn: () => fetchSurahEdition(surahId, settings.translationEdition),
+    queryKey: ["surah-translation-local", surahId],
+    queryFn: () => Promise.resolve(fetchLocalTranslation(surahId)),
     enabled: settings.showTranslation && !effectiveContinuous,
-    staleTime: 1000 * 60 * 60,
+    staleTime: Infinity,
   });
 
   useEffect(() => {
@@ -604,7 +611,7 @@ export default function SurahScreen() {
                           },
                         ]}
                       >
-                        {ayah.text}
+                        {stripTajweedTags(ayah.text)}
                       </Text>
                     )}
 
@@ -996,7 +1003,7 @@ function PageAyahContent({
             lineHeight: settings.arabicFontSize * 2.2,
           }}
         >
-          {ayah.text}
+          {stripTajweedTags(ayah.text)}
         </Text>
       )}
       <View style={styles.ayahEndRow}>
